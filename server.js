@@ -913,4 +913,3 @@ initDB()
 
     process.exit(1);
   });
-```
