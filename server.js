@@ -51,32 +51,35 @@ app.use(
 // ============================================================
 // INICIALIZAR BASE DE DATOS
 // ============================================================
-
 async function initDB() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS keys (
-      id UUID PRIMARY KEY,
-      key_hash TEXT UNIQUE NOT NULL,
-      type TEXT NOT NULL,
-      created_at BIGINT NOT NULL,
-      expires_at BIGINT,
-      used_by TEXT,
-      used_username TEXT,
-      used_at BIGINT,
-      revoked BOOLEAN NOT NULL DEFAULT FALSE
-    );
+  const createKeysTable = [
+    "CREATE TABLE IF NOT EXISTS keys (",
+    "id UUID PRIMARY KEY,",
+    "key_hash TEXT UNIQUE NOT NULL,",
+    "type TEXT NOT NULL,",
+    "created_at BIGINT NOT NULL,",
+    "expires_at BIGINT,",
+    "used_by TEXT,",
+    "used_username TEXT,",
+    "used_at BIGINT,",
+    "revoked BOOLEAN NOT NULL DEFAULT FALSE",
+    ")"
+  ].join("\n");
 
-    CREATE TABLE IF NOT EXISTS whitelist (
-      roblox_user_id TEXT PRIMARY KEY,
-      roblox_username TEXT,
-      created_at BIGINT NOT NULL
-    );
-  `);
+  const createWhitelistTable = [
+    "CREATE TABLE IF NOT EXISTS whitelist (",
+    "roblox_user_id TEXT PRIMARY KEY,",
+    "roblox_username TEXT,",
+    "created_at BIGINT NOT NULL",
+    ")"
+  ].join("\n");
+
+  await pool.query(createKeysTable);
+  await pool.query(createWhitelistTable);
+
+  console.log("Base de datos inicializada correctamente");
 }
 
-// ============================================================
-// FUNCIONES
-// ============================================================
 
 function hashKey(key) {
   return crypto
