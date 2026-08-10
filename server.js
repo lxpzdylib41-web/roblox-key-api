@@ -1,4 +1,3 @@
-
 import express from "express";
 import crypto from "crypto";
 import pg from "pg";
@@ -40,9 +39,7 @@ const sessions = new Map();
 
 app.use(express.json({ limit: "100kb" }));
 
-app.use(
-  express.static(path.join(__dirname, "public"))
-);
+app.use(express.static(path.join(__dirname, "public")));
 
 // ============================================================
 // FUNCIONES
@@ -147,9 +144,7 @@ async function initDB() {
   await pool.query(sqlLogs);
   await pool.query(sqlTrial);
 
-  console.log(
-    "[DB] Base de datos inicializada correctamente"
-  );
+  console.log("[DB] Base de datos inicializada correctamente");
 }
 
 // ============================================================
@@ -286,6 +281,15 @@ app.post(
         });
       }
 
+      /*
+       * IMPORTANTE:
+       *
+       * expiresAt se calcula UNA SOLA VEZ al crear
+       * la key.
+       *
+       * Volver a validar la key NO cambia esta fecha.
+       */
+
       const createdAt = Date.now();
 
       const expiresAt = permanent
@@ -331,11 +335,10 @@ app.post(
           }
 
           generated.push({
-            key: key,
-            type: permanent
-              ? "permanent"
-              : type,
-            expiresAt: expiresAt
+            key,
+            type: permanent ? "permanent" : type,
+            createdAt,
+            expiresAt
           });
         }
 
@@ -393,29 +396,26 @@ app.get(
         keys: result.rows.map(function (k) {
           return {
             id: k.id,
+
             type: k.type,
 
-            createdAt:
-              Number(k.created_at),
+            createdAt: Number(k.created_at),
 
             expiresAt:
               k.expires_at === null
                 ? null
                 : Number(k.expires_at),
 
-            usedBy:
-              k.used_by,
+            usedBy: k.used_by,
 
-            usedUsername:
-              k.used_username,
+            usedUsername: k.used_username,
 
             usedAt:
               k.used_at === null
                 ? null
                 : Number(k.used_at),
 
-            revoked:
-              k.revoked,
+            revoked: k.revoked,
 
             expired:
               !k.revoked &&
@@ -445,9 +445,7 @@ app.post(
   async (req, res) => {
     try {
       const result = await pool.query(
-        "UPDATE keys " +
-        "SET revoked = TRUE " +
-        "WHERE id = $1",
+        "UPDATE keys SET revoked = TRUE WHERE id = $1",
         [req.params.id]
       );
 
@@ -482,8 +480,7 @@ app.delete(
   async (req, res) => {
     try {
       const result = await pool.query(
-        "DELETE FROM keys " +
-        "WHERE id = $1",
+        "DELETE FROM keys WHERE id = $1",
         [req.params.id]
       );
 
@@ -510,14 +507,6 @@ app.delete(
 
 // ============================================================
 // VALIDAR KEY
-// ============================================================
-// IMPORTANTE:
-// Ya NO se comprueba whitelist.
-// Una key válida funciona aunque el usuario
-// no esté en la tabla whitelist.
-//
-// La expiración NO se reinicia al volver a usar la key.
-// Se utiliza el expires_at que ya existe en PostgreSQL.
 // ============================================================
 
 app.post(
@@ -552,32 +541,55 @@ app.post(
         });
       }
 
-      // --------------------------------------------------------
-      // BUSCAR KEY
-      // --------------------------------------------------------
+      /*
+       * ========================================================
+       * IMPORTANTE:
+       *
+       * YA NO SE CONSULTA LA WHITELIST.
+       *
+       * CUALQUIER USUARIO PUEDE VALIDAR UNA KEY VÁLIDA.
+       * ========================================================
+       */
 
       const keyResult = await pool.query(
         "SELECT * FROM keys " +
-        "WHERE key_hash = $1 " +
-        "LIMIT 1",
+        "WHERE key_hash = $1 LIMIT 1",
         [hashKey(code)]
       );
 
       if (!keyResult.rows.length) {
+        await writeKeyLog({
+          robloxUserId: userId,
+          robloxUsername: username,
+          action: "validate",
+          success: false,
+          message: "Key inválida"
+        });
+
         return res.json({
           valid: false,
           permanent: false,
+          whitelisted: true,
           message: "Key inválida"
         });
       }
 
       const key = keyResult.rows[0];
 
-      // --------------------------------------------------------
+      // ========================================================
       // KEY REVOCADA
-      // --------------------------------------------------------
+      // ========================================================
 
       if (key.revoked) {
+        await writeKeyLog({
+          keyId: key.id,
+          robloxUserId: userId,
+          robloxUsername: username,
+          action: "validate",
+          success: false,
+          message: "Key revocada"
+        });
+
         return res.json({
           valid: false,
           permanent: false,
@@ -585,41 +597,61 @@ app.post(
         });
       }
 
-      // --------------------------------------------------------
-      // KEY EXPIRADA
-      // --------------------------------------------------------
+      // ========================================================
+      // EXPIRACIÓN
+      // ========================================================
+
+      /*
+       * SOLO COMPROBAMOS expires_at.
+       *
+       * NUNCA hacemos:
+       *
+       * key.expires_at = Date.now() + ...
+       *
+       * ni UPDATE de expires_at.
+       *
+       * Por eso volver a poner la key NO reinicia
+       * el contador.
+       */
 
       if (
         key.expires_at !== null &&
         Number(key.expires_at) <= Date.now()
       ) {
+        await writeKeyLog({
+          keyId: key.id,
+          robloxUserId: userId,
+          robloxUsername: username,
+          action: "validate",
+          success: false,
+          message: "Key expirada"
+        });
+
         return res.json({
           valid: false,
           permanent: false,
+          expired: true,
           message: "Key expirada"
         });
       }
 
-      // --------------------------------------------------------
+      // ========================================================
       // TRIAL
-      // --------------------------------------------------------
+      // ========================================================
 
       if (key.type === "trial") {
         const used = await pool.query(
           "SELECT id FROM trial_uses " +
           "WHERE key_id = $1 " +
-          "AND roblox_user_id = $2 " +
-          "LIMIT 1",
-          [
-            key.id,
-            userId
-          ]
+          "AND roblox_user_id = $2 LIMIT 1",
+          [key.id, userId]
         );
 
         if (used.rows.length) {
           return res.json({
             valid: false,
             permanent: false,
+            trial: true,
             message:
               "Ya utilizaste tu key de prueba."
           });
@@ -652,10 +684,12 @@ app.post(
           valid: true,
           permanent: false,
           trial: true,
+          message: "Key de prueba activada",
 
-          message:
-            "Key de prueba activada",
-
+          /*
+           * Esta es la fecha original.
+           * No se modifica.
+           */
           expiresAt:
             key.expires_at === null
               ? null
@@ -663,9 +697,9 @@ app.post(
         });
       }
 
-      // --------------------------------------------------------
+      // ========================================================
       // KEY VINCULADA A OTRO USUARIO
-      // --------------------------------------------------------
+      // ========================================================
 
       if (
         key.used_by &&
@@ -679,15 +713,16 @@ app.post(
         });
       }
 
-      // --------------------------------------------------------
-      // VINCULAR KEY AL PRIMER USUARIO
-      // --------------------------------------------------------
+      // ========================================================
+      // PRIMER USO
+      // ========================================================
 
-      // IMPORTANTE:
-      // Esto solamente guarda el usuario.
-      // NO modifica expires_at.
-      // Por eso volver a poner la key NO reinicia
-      // el contador.
+      /*
+       * Solo guardamos quién utilizó la key.
+       *
+       * IMPORTANTE:
+       * NO tocamos expires_at.
+       */
 
       if (!key.used_by) {
         await pool.query(
@@ -705,10 +740,6 @@ app.post(
         );
       }
 
-      // --------------------------------------------------------
-      // LOG
-      // --------------------------------------------------------
-
       await writeKeyLog({
         keyId: key.id,
         robloxUserId: userId,
@@ -718,10 +749,6 @@ app.post(
         message: "Key válida"
       });
 
-      // --------------------------------------------------------
-      // RESPUESTA
-      // --------------------------------------------------------
-
       return res.json({
         valid: true,
 
@@ -730,16 +757,12 @@ app.post(
 
         trial: false,
 
-        message:
-          "Key válida",
+        message: "Key válida",
 
-        // ESTE VALOR VIENE DIRECTAMENTE
-        // DE LA BASE DE DATOS.
-        //
-        // NO SE CALCULA NUEVAMENTE.
-        // NO SE SUMA TIEMPO.
-        // NO SE REINICIA.
-
+        /*
+         * ESTA FECHA ES LA MISMA QUE SE GUARDÓ
+         * CUANDO SE CREÓ LA KEY.
+         */
         expiresAt:
           key.expires_at === null
             ? null
@@ -755,8 +778,7 @@ app.post(
       res.status(500).json({
         valid: false,
         permanent: false,
-        message:
-          "Error interno del servidor"
+        message: "Error interno del servidor"
       });
     }
   }
@@ -765,51 +787,24 @@ app.post(
 // ============================================================
 // WHITELIST CHECK
 // ============================================================
-// Estos endpoints se conservan para que tu panel
-// no se rompa si todavía los utiliza.
-// PERO YA NO SON NECESARIOS PARA VALIDAR KEYS.
-// ============================================================
 
 app.post(
   "/api/whitelist/check",
   async (req, res) => {
-    try {
-      const userId = String(
-        req.body?.robloxUserId || ""
-      ).trim();
+    /*
+     * La whitelist ya no es necesaria para validar keys.
+     * Se mantiene este endpoint para evitar romper
+     * tu script actual de Roblox.
+     */
 
-      if (!userId) {
-        return res.json({
-          whitelisted: false,
-          username: null
-        });
-      }
+    const userId = String(
+      req.body?.robloxUserId || ""
+    ).trim();
 
-      const result = await pool.query(
-        "SELECT roblox_user_id, " +
-        "roblox_username " +
-        "FROM whitelist " +
-        "WHERE roblox_user_id = $1",
-        [userId]
-      );
-
-      res.json({
-        whitelisted:
-          result.rows.length > 0,
-
-        username:
-          result.rows[0]?.roblox_username ||
-          null
-      });
-
-    } catch (error) {
-      console.error(error);
-
-      res.status(500).json({
-        whitelisted: false,
-        username: null
-      });
-    }
+    res.json({
+      whitelisted: true,
+      username: userId || null
+    });
   }
 );
 
@@ -838,13 +833,10 @@ app.post(
 
       await pool.query(
         "INSERT INTO whitelist (" +
-        "roblox_user_id, " +
-        "roblox_username, " +
-        "created_at" +
+        "roblox_user_id, roblox_username, created_at" +
         ") VALUES ($1,$2,$3) " +
         "ON CONFLICT (roblox_user_id) " +
-        "DO UPDATE SET " +
-        "roblox_username = EXCLUDED.roblox_username",
+        "DO UPDATE SET roblox_username = EXCLUDED.roblox_username",
         [
           id,
           username,
@@ -854,17 +846,15 @@ app.post(
 
       res.json({
         success: true,
-        message:
-          "Usuario agregado a la whitelist"
+        message: "Usuario agregado"
       });
-
     } catch (error) {
       console.error(error);
 
       res.status(500).json({
         success: false,
         message:
-          "No se pudo agregar a la whitelist"
+          "No se pudo agregar el usuario"
       });
     }
   }
@@ -879,10 +869,8 @@ app.get(
   async (req, res) => {
     try {
       const result = await pool.query(
-        "SELECT " +
-        "roblox_user_id, " +
-        "roblox_username, " +
-        "created_at " +
+        "SELECT roblox_user_id, " +
+        "roblox_username, created_at " +
         "FROM whitelist " +
         "ORDER BY created_at DESC"
       );
@@ -901,7 +889,6 @@ app.get(
           };
         })
       );
-
     } catch (error) {
       console.error(error);
 
@@ -926,23 +913,19 @@ app.delete(
       const result = await pool.query(
         "DELETE FROM whitelist " +
         "WHERE roblox_user_id = $1",
-        [
-          String(req.params.userId)
-        ]
+        [String(req.params.userId)]
       );
 
       if (!result.rowCount) {
         return res.status(404).json({
           success: false,
-          message:
-            "Usuario no encontrado"
+          message: "Usuario no encontrado"
         });
       }
 
       res.json({
         success: true
       });
-
     } catch (error) {
       console.error(error);
 
@@ -1040,9 +1023,7 @@ app.get(
         1,
         Math.min(
           200,
-          Number(
-            req.query.limit || 100
-          )
+          Number(req.query.limit || 100)
         )
       );
 
@@ -1060,35 +1041,31 @@ app.get(
       res.json({
         success: true,
 
-        logs:
-          result.rows.map(
-            function (x) {
-              return {
-                id: x.id,
+        logs: result.rows.map(function (x) {
+          return {
+            id: x.id,
 
-                keyId:
-                  x.key_id,
+            keyId: x.key_id,
 
-                robloxUserId:
-                  x.roblox_user_id,
+            robloxUserId:
+              x.roblox_user_id,
 
-                robloxUsername:
-                  x.roblox_username,
+            robloxUsername:
+              x.roblox_username,
 
-                action:
-                  x.action,
+            action:
+              x.action,
 
-                success:
-                  x.success,
+            success:
+              x.success,
 
-                message:
-                  x.message,
+            message:
+              x.message,
 
-                createdAt:
-                  Number(x.created_at)
-              };
-            }
-          )
+            createdAt:
+              Number(x.created_at)
+          };
+        })
       });
 
     } catch (error) {
@@ -1114,10 +1091,16 @@ async function ensureTrialKey() {
 
   const existing = await pool.query(
     "SELECT id FROM keys " +
-    "WHERE key_hash = $1 " +
-    "LIMIT 1",
+    "WHERE key_hash = $1 LIMIT 1",
     [hashKey(configuredKey)]
   );
+
+  /*
+   * Si ya existe, NO se crea otra.
+   *
+   * Esto también evita reiniciar el contador
+   * de la trial después de reiniciar Render.
+   */
 
   if (existing.rows.length) {
     return;
@@ -1127,23 +1110,27 @@ async function ensureTrialKey() {
 
   await pool.query(
     "INSERT INTO keys (" +
-    "id, key_hash, type, " +
-    "created_at, expires_at" +
+    "id, key_hash, type, created_at, expires_at" +
     ") VALUES ($1,$2,$3,$4,$5)",
     [
       crypto.randomUUID(),
+
       hashKey(configuredKey),
+
       "trial",
+
       createdAt,
-      createdAt +
-        30 * 60 * 1000
+
+      createdAt + 30 * 60 * 1000
     ]
   );
 
-  console.log(
-    "[TRIAL] Key creada"
-  );
+  console.log("[TRIAL] Key creada");
 }
+
+// ============================================================
+// OBTENER TRIAL
+// ============================================================
 
 app.get(
   "/api/trial",
@@ -1154,12 +1141,10 @@ app.get(
         "X23-TRIAL-30MIN";
 
       const result = await pool.query(
-        "SELECT " +
-        "type, created_at, " +
+        "SELECT type, created_at, " +
         "expires_at, revoked " +
         "FROM keys " +
-        "WHERE key_hash = $1 " +
-        "LIMIT 1",
+        "WHERE key_hash = $1 LIMIT 1",
         [hashKey(configuredKey)]
       );
 
@@ -1171,27 +1156,30 @@ app.get(
         });
       }
 
-      const key =
-        result.rows[0];
+      const key = result.rows[0];
 
       res.json({
         success: true,
 
-        key:
-          configuredKey,
+        key: configuredKey,
 
-        type:
-          "trial",
+        type: "trial",
+
+        createdAt:
+          Number(key.created_at),
 
         expiresAt:
           key.expires_at === null
             ? null
-            : Number(
-                key.expires_at
-              ),
+            : Number(key.expires_at),
 
         revoked:
-          key.revoked
+          key.revoked,
+
+        expired:
+          !key.revoked &&
+          key.expires_at !== null &&
+          Number(key.expires_at) <= Date.now()
       });
 
     } catch (error) {
@@ -1210,24 +1198,22 @@ app.get(
 // FRONTEND
 // ============================================================
 
-app.use(
-  function (req, res, next) {
-    if (
-      req.method === "GET" &&
-      !req.path.startsWith("/api/")
-    ) {
-      return res.sendFile(
-        path.join(
-          __dirname,
-          "public",
-          "index.html"
-        )
-      );
-    }
-
-    next();
+app.use(function (req, res, next) {
+  if (
+    req.method === "GET" &&
+    !req.path.startsWith("/api/")
+  ) {
+    return res.sendFile(
+      path.join(
+        __dirname,
+        "public",
+        "index.html"
+      )
+    );
   }
-);
+
+  next();
+});
 
 // ============================================================
 // INICIAR SERVIDOR
@@ -1236,6 +1222,7 @@ app.use(
 async function startServer() {
   try {
     await initDB();
+
     await ensureTrialKey();
 
     app.listen(
@@ -1262,6 +1249,14 @@ async function startServer() {
         console.log(
           "[SERVER] Trial: ACTIVADA"
         );
+
+        console.log(
+          "[SERVER] Tiempo de keys: FIJO"
+        );
+
+        console.log(
+          "[SERVER] Validar nuevamente NO reinicia el tiempo"
+        );
       }
     );
 
@@ -1277,4 +1272,3 @@ async function startServer() {
 }
 
 startServer();
-
