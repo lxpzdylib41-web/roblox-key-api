@@ -96,15 +96,13 @@ function hashKey(key) {
 }
 
 function makeKey() {
-  const raw = crypto
-    .randomBytes(18)
-    .toString("base64url")
-    .toUpperCase();
+  const raw = crypto.randomBytes(18).toString("base64url").toUpperCase();
 
-  return `X23-${raw.slice(0, 6)}-${raw.slice(
-    6,
-    12
-  )}-${raw.slice(12, 18)}`;
+  const part1 = raw.slice(0, 6);
+  const part2 = raw.slice(6, 12);
+  const part3 = raw.slice(12, 18);
+
+  return "X23-" + part1 + "-" + part2 + "-" + part3;
 }
 
 function sessionToken() {
