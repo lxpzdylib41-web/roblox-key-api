@@ -1,0 +1,14 @@
+{
+  "name": "roblox-key-discord-bot",
+  "version": "1.0.0",
+  "description": "Bot de Discord para Roblox Key API",
+  "type": "module",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.27.0",
+    "dotenv": "^17.4.2"
+  }
+}
