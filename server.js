@@ -44,6 +44,10 @@ app.use(
   express.static(path.join(__dirname, "public"))
 );
 
+// ============================================================
+// FUNCIONES
+// ============================================================
+
 function hashKey(key) {
   return crypto
     .createHmac("sha256", SESSION_SECRET)
@@ -91,55 +95,64 @@ function passwordMatches(input) {
   );
 }
 
+// ============================================================
+// BASE DE DATOS
+// ============================================================
+
 async function initDB() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS keys (
-      id UUID PRIMARY KEY,
-      key_hash TEXT UNIQUE NOT NULL,
-      type TEXT NOT NULL,
-      created_at BIGINT NOT NULL,
-      expires_at BIGINT,
-      used_by TEXT,
-      used_username TEXT,
-      used_at BIGINT,
-      revoked BOOLEAN NOT NULL DEFAULT FALSE
-    )
-  `);
+  const sqlKeys =
+    "CREATE TABLE IF NOT EXISTS keys (" +
+    "id UUID PRIMARY KEY," +
+    "key_hash TEXT UNIQUE NOT NULL," +
+    "type TEXT NOT NULL," +
+    "created_at BIGINT NOT NULL," +
+    "expires_at BIGINT," +
+    "used_by TEXT," +
+    "used_username TEXT," +
+    "used_at BIGINT," +
+    "revoked BOOLEAN NOT NULL DEFAULT FALSE" +
+    ")";
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS whitelist (
-      roblox_user_id TEXT PRIMARY KEY,
-      roblox_username TEXT,
-      created_at BIGINT NOT NULL
-    )
-  `);
+  const sqlWhitelist =
+    "CREATE TABLE IF NOT EXISTS whitelist (" +
+    "roblox_user_id TEXT PRIMARY KEY," +
+    "roblox_username TEXT," +
+    "created_at BIGINT NOT NULL" +
+    ")";
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS key_logs (
-      id UUID PRIMARY KEY,
-      key_id UUID,
-      roblox_user_id TEXT,
-      roblox_username TEXT,
-      action TEXT NOT NULL,
-      success BOOLEAN NOT NULL DEFAULT FALSE,
-      message TEXT,
-      created_at BIGINT NOT NULL
-    )
-  `);
+  const sqlLogs =
+    "CREATE TABLE IF NOT EXISTS key_logs (" +
+    "id UUID PRIMARY KEY," +
+    "key_id UUID," +
+    "roblox_user_id TEXT," +
+    "roblox_username TEXT," +
+    "action TEXT NOT NULL," +
+    "success BOOLEAN NOT NULL DEFAULT FALSE," +
+    "message TEXT," +
+    "created_at BIGINT NOT NULL" +
+    ")";
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS trial_uses (
-      id UUID PRIMARY KEY,
-      key_id UUID NOT NULL,
-      roblox_user_id TEXT NOT NULL,
-      roblox_username TEXT,
-      used_at BIGINT NOT NULL,
-      UNIQUE(key_id, roblox_user_id)
-    )
-  `);
+  const sqlTrial =
+    "CREATE TABLE IF NOT EXISTS trial_uses (" +
+    "id UUID PRIMARY KEY," +
+    "key_id UUID NOT NULL," +
+    "roblox_user_id TEXT NOT NULL," +
+    "roblox_username TEXT," +
+    "used_at BIGINT NOT NULL," +
+    "UNIQUE(key_id, roblox_user_id)" +
+    ")";
+
+  await pool.query(sqlKeys);
+  await pool.query(sqlWhitelist);
+  await pool.query(sqlLogs);
+  await pool.query(sqlTrial);
 
   console.log("[DB] Base de datos inicializada correctamente");
 }
+
+// ============================================================
+// LOGS
+// ============================================================
 
 async function writeKeyLog({
   keyId = null,
@@ -151,19 +164,10 @@ async function writeKeyLog({
 }) {
   try {
     await pool.query(
-      `
-      INSERT INTO key_logs (
-        id,
-        key_id,
-        roblox_user_id,
-        roblox_username,
-        action,
-        success,
-        message,
-        created_at
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-      `,
+      "INSERT INTO key_logs (" +
+      "id, key_id, roblox_user_id, roblox_username, " +
+      "action, success, message, created_at" +
+      ") VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
       [
         crypto.randomUUID(),
         keyId,
@@ -179,6 +183,10 @@ async function writeKeyLog({
     console.error("[LOG] Error:", error);
   }
 }
+
+// ============================================================
+// HEALTH
+// ============================================================
 
 app.get("/health", async (req, res) => {
   try {
@@ -197,6 +205,10 @@ app.get("/health", async (req, res) => {
     });
   }
 });
+
+// ============================================================
+// LOGIN
+// ============================================================
 
 app.post("/api/admin/login", (req, res) => {
   if (!passwordMatches(req.body?.password)) {
@@ -218,6 +230,10 @@ app.post("/api/admin/login", (req, res) => {
   });
 });
 
+// ============================================================
+// LOGOUT
+// ============================================================
+
 app.post("/api/admin/logout", admin, (req, res) => {
   const token = req.headers["x-admin-token"];
 
@@ -227,6 +243,10 @@ app.post("/api/admin/logout", admin, (req, res) => {
     success: true
   });
 });
+
+// ============================================================
+// GENERAR KEYS
+// ============================================================
 
 app.post(
   "/api/admin/keys/generate",
@@ -286,16 +306,9 @@ app.post(
 
             try {
               await client.query(
-                `
-                INSERT INTO keys (
-                  id,
-                  key_hash,
-                  type,
-                  created_at,
-                  expires_at
-                )
-                VALUES ($1,$2,$3,$4,$5)
-                `,
+                "INSERT INTO keys (" +
+                "id, key_hash, type, created_at, expires_at" +
+                ") VALUES ($1,$2,$3,$4,$5)",
                 [
                   crypto.randomUUID(),
                   hashKey(key),
@@ -316,9 +329,9 @@ app.post(
           }
 
           generated.push({
-            key,
+            key: key,
             type: permanent ? "permanent" : type,
-            expiresAt
+            expiresAt: expiresAt
           });
         }
 
@@ -331,7 +344,10 @@ app.post(
       } catch (error) {
         await client.query("ROLLBACK");
 
-        console.error("Error generando keys:", error);
+        console.error(
+          "Error generando keys:",
+          error
+        );
 
         res.status(500).json({
           success: false,
@@ -351,44 +367,43 @@ app.post(
   }
 );
 
+// ============================================================
+// LISTAR KEYS
+// ============================================================
+
 app.get("/api/admin/keys", admin, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT
-        id,
-        type,
-        created_at,
-        expires_at,
-        used_by,
-        used_username,
-        used_at,
-        revoked
-      FROM keys
-      ORDER BY created_at DESC
-    `);
+    const result = await pool.query(
+      "SELECT " +
+      "id, type, created_at, expires_at, " +
+      "used_by, used_username, used_at, revoked " +
+      "FROM keys ORDER BY created_at DESC"
+    );
 
     res.json({
       success: true,
-      keys: result.rows.map((k) => ({
-        id: k.id,
-        type: k.type,
-        createdAt: Number(k.created_at),
-        expiresAt:
-          k.expires_at === null
-            ? null
-            : Number(k.expires_at),
-        usedBy: k.used_by,
-        usedUsername: k.used_username,
-        usedAt:
-          k.used_at === null
-            ? null
-            : Number(k.used_at),
-        revoked: k.revoked,
-        expired:
-          !k.revoked &&
-          k.expires_at !== null &&
-          Number(k.expires_at) <= Date.now()
-      }))
+      keys: result.rows.map(function (k) {
+        return {
+          id: k.id,
+          type: k.type,
+          createdAt: Number(k.created_at),
+          expiresAt:
+            k.expires_at === null
+              ? null
+              : Number(k.expires_at),
+          usedBy: k.used_by,
+          usedUsername: k.used_username,
+          usedAt:
+            k.used_at === null
+              ? null
+              : Number(k.used_at),
+          revoked: k.revoked,
+          expired:
+            !k.revoked &&
+            k.expires_at !== null &&
+            Number(k.expires_at) <= Date.now()
+        };
+      })
     });
   } catch (error) {
     console.error(error);
@@ -400,17 +415,17 @@ app.get("/api/admin/keys", admin, async (req, res) => {
   }
 });
 
+// ============================================================
+// REVOCAR KEY
+// ============================================================
+
 app.post(
   "/api/admin/keys/:id/revoke",
   admin,
   async (req, res) => {
     try {
       const result = await pool.query(
-        `
-        UPDATE keys
-        SET revoked = TRUE
-        WHERE id = $1
-        `,
+        "UPDATE keys SET revoked = TRUE WHERE id = $1",
         [req.params.id]
       );
 
@@ -435,16 +450,17 @@ app.post(
   }
 );
 
+// ============================================================
+// ELIMINAR KEY
+// ============================================================
+
 app.delete(
   "/api/admin/keys/:id",
   admin,
   async (req, res) => {
     try {
       const result = await pool.query(
-        `
-        DELETE FROM keys
-        WHERE id = $1
-        `,
+        "DELETE FROM keys WHERE id = $1",
         [req.params.id]
       );
 
@@ -468,6 +484,10 @@ app.delete(
     }
   }
 );
+
+// ============================================================
+// VALIDAR KEY
+// ============================================================
 
 app.post("/api/keys/validate", async (req, res) => {
   try {
@@ -500,13 +520,8 @@ app.post("/api/keys/validate", async (req, res) => {
     }
 
     const whitelist = await pool.query(
-      `
-      SELECT
-        roblox_user_id,
-        roblox_username
-      FROM whitelist
-      WHERE roblox_user_id = $1
-      `,
+      "SELECT roblox_user_id, roblox_username " +
+      "FROM whitelist WHERE roblox_user_id = $1",
       [userId]
     );
 
@@ -529,12 +544,8 @@ app.post("/api/keys/validate", async (req, res) => {
     }
 
     const keyResult = await pool.query(
-      `
-      SELECT *
-      FROM keys
-      WHERE key_hash = $1
-      LIMIT 1
-      `,
+      "SELECT * FROM keys " +
+      "WHERE key_hash = $1 LIMIT 1",
       [hashKey(code)]
     );
 
@@ -572,13 +583,9 @@ app.post("/api/keys/validate", async (req, res) => {
 
     if (key.type === "trial") {
       const used = await pool.query(
-        `
-        SELECT id
-        FROM trial_uses
-        WHERE key_id = $1
-        AND roblox_user_id = $2
-        LIMIT 1
-        `,
+        "SELECT id FROM trial_uses " +
+        "WHERE key_id = $1 " +
+        "AND roblox_user_id = $2 LIMIT 1",
         [key.id, userId]
       );
 
@@ -592,16 +599,9 @@ app.post("/api/keys/validate", async (req, res) => {
       }
 
       await pool.query(
-        `
-        INSERT INTO trial_uses (
-          id,
-          key_id,
-          roblox_user_id,
-          roblox_username,
-          used_at
-        )
-        VALUES ($1,$2,$3,$4,$5)
-        `,
+        "INSERT INTO trial_uses (" +
+        "id, key_id, roblox_user_id, roblox_username, used_at" +
+        ") VALUES ($1,$2,$3,$4,$5)",
         [
           crypto.randomUUID(),
           key.id,
@@ -648,14 +648,9 @@ app.post("/api/keys/validate", async (req, res) => {
 
     if (!key.used_by) {
       await pool.query(
-        `
-        UPDATE keys
-        SET
-          used_by = $1,
-          used_username = $2,
-          used_at = $3
-        WHERE id = $4
-        `,
+        "UPDATE keys SET " +
+        "used_by = $1, used_username = $2, used_at = $3 " +
+        "WHERE id = $4",
         [
           userId,
           username,
@@ -686,7 +681,10 @@ app.post("/api/keys/validate", async (req, res) => {
           : Number(key.expires_at)
     });
   } catch (error) {
-    console.error("Error validando key:", error);
+    console.error(
+      "Error validando key:",
+      error
+    );
 
     res.status(500).json({
       valid: false,
@@ -695,6 +693,10 @@ app.post("/api/keys/validate", async (req, res) => {
     });
   }
 });
+
+// ============================================================
+// WHITELIST CHECK
+// ============================================================
 
 app.post("/api/whitelist/check", async (req, res) => {
   try {
@@ -710,13 +712,8 @@ app.post("/api/whitelist/check", async (req, res) => {
     }
 
     const result = await pool.query(
-      `
-      SELECT
-        roblox_user_id,
-        roblox_username
-      FROM whitelist
-      WHERE roblox_user_id = $1
-      `,
+      "SELECT roblox_user_id, roblox_username " +
+      "FROM whitelist WHERE roblox_user_id = $1",
       [userId]
     );
 
@@ -734,6 +731,10 @@ app.post("/api/whitelist/check", async (req, res) => {
     });
   }
 });
+
+// ============================================================
+// AGREGAR WHITELIST
+// ============================================================
 
 app.post("/api/whitelist", async (req, res) => {
   try {
@@ -753,17 +754,11 @@ app.post("/api/whitelist", async (req, res) => {
     }
 
     await pool.query(
-      `
-      INSERT INTO whitelist (
-        roblox_user_id,
-        roblox_username,
-        created_at
-      )
-      VALUES ($1,$2,$3)
-      ON CONFLICT (roblox_user_id)
-      DO UPDATE SET
-        roblox_username = EXCLUDED.roblox_username
-      `,
+      "INSERT INTO whitelist (" +
+      "roblox_user_id, roblox_username, created_at" +
+      ") VALUES ($1,$2,$3) " +
+      "ON CONFLICT (roblox_user_id) " +
+      "DO UPDATE SET roblox_username = EXCLUDED.roblox_username",
       [
         id,
         username,
@@ -773,8 +768,7 @@ app.post("/api/whitelist", async (req, res) => {
 
     res.json({
       success: true,
-      message:
-        "Usuario agregado a la whitelist"
+      message: "Usuario agregado a la whitelist"
     });
   } catch (error) {
     console.error(error);
@@ -787,23 +781,25 @@ app.post("/api/whitelist", async (req, res) => {
   }
 });
 
+// ============================================================
+// LISTAR WHITELIST
+// ============================================================
+
 app.get("/api/whitelist", async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT
-        roblox_user_id,
-        roblox_username,
-        created_at
-      FROM whitelist
-      ORDER BY created_at DESC
-    `);
+    const result = await pool.query(
+      "SELECT roblox_user_id, roblox_username, created_at " +
+      "FROM whitelist ORDER BY created_at DESC"
+    );
 
     res.json(
-      result.rows.map((x) => ({
-        robloxUserId: x.roblox_user_id,
-        robloxUsername: x.roblox_username,
-        createdAt: Number(x.created_at)
-      }))
+      result.rows.map(function (x) {
+        return {
+          robloxUserId: x.roblox_user_id,
+          robloxUsername: x.roblox_username,
+          createdAt: Number(x.created_at)
+        };
+      })
     );
   } catch (error) {
     console.error(error);
@@ -815,16 +811,17 @@ app.get("/api/whitelist", async (req, res) => {
   }
 });
 
+// ============================================================
+// ELIMINAR WHITELIST
+// ============================================================
+
 app.delete(
   "/api/admin/whitelist/:userId",
   admin,
   async (req, res) => {
     try {
       const result = await pool.query(
-        `
-        DELETE FROM whitelist
-        WHERE roblox_user_id = $1
-        `,
+        "DELETE FROM whitelist WHERE roblox_user_id = $1",
         [String(req.params.userId)]
       );
 
@@ -850,41 +847,36 @@ app.delete(
   }
 );
 
+// ============================================================
+// STATS
+// ============================================================
+
 app.get("/api/admin/stats", admin, async (req, res) => {
   try {
-    const keys = await pool.query(`
-      SELECT COUNT(*)::int AS count
-      FROM keys
-    `);
+    const keys = await pool.query(
+      "SELECT COUNT(*)::int AS count FROM keys"
+    );
 
     const active = await pool.query(
-      `
-      SELECT COUNT(*)::int AS count
-      FROM keys
-      WHERE revoked = FALSE
-      AND (
-        expires_at IS NULL
-        OR expires_at > $1
-      )
-      `,
+      "SELECT COUNT(*)::int AS count " +
+      "FROM keys " +
+      "WHERE revoked = FALSE " +
+      "AND (expires_at IS NULL OR expires_at > $1)",
       [Date.now()]
     );
 
-    const revoked = await pool.query(`
-      SELECT COUNT(*)::int AS count
-      FROM keys
-      WHERE revoked = TRUE
-    `);
+    const revoked = await pool.query(
+      "SELECT COUNT(*)::int AS count " +
+      "FROM keys WHERE revoked = TRUE"
+    );
 
-    const whitelist = await pool.query(`
-      SELECT COUNT(*)::int AS count
-      FROM whitelist
-    `);
+    const whitelist = await pool.query(
+      "SELECT COUNT(*)::int AS count FROM whitelist"
+    );
 
-    const logs = await pool.query(`
-      SELECT COUNT(*)::int AS count
-      FROM key_logs
-    `);
+    const logs = await pool.query(
+      "SELECT COUNT(*)::int AS count FROM key_logs"
+    );
 
     res.json({
       success: true,
@@ -904,6 +896,10 @@ app.get("/api/admin/stats", admin, async (req, res) => {
   }
 });
 
+// ============================================================
+// LOGS
+// ============================================================
+
 app.get("/api/admin/logs", admin, async (req, res) => {
   try {
     const limit = Math.max(
@@ -915,35 +911,29 @@ app.get("/api/admin/logs", admin, async (req, res) => {
     );
 
     const result = await pool.query(
-      `
-      SELECT
-        id,
-        key_id,
-        roblox_user_id,
-        roblox_username,
-        action,
-        success,
-        message,
-        created_at
-      FROM key_logs
-      ORDER BY created_at DESC
-      LIMIT $1
-      `,
+      "SELECT " +
+      "id, key_id, roblox_user_id, roblox_username, " +
+      "action, success, message, created_at " +
+      "FROM key_logs " +
+      "ORDER BY created_at DESC " +
+      "LIMIT $1",
       [limit]
     );
 
     res.json({
       success: true,
-      logs: result.rows.map((x) => ({
-        id: x.id,
-        keyId: x.key_id,
-        robloxUserId: x.roblox_user_id,
-        robloxUsername: x.roblox_username,
-        action: x.action,
-        success: x.success,
-        message: x.message,
-        createdAt: Number(x.created_at)
-      }))
+      logs: result.rows.map(function (x) {
+        return {
+          id: x.id,
+          keyId: x.key_id,
+          robloxUserId: x.roblox_user_id,
+          robloxUsername: x.roblox_username,
+          action: x.action,
+          success: x.success,
+          message: x.message,
+          createdAt: Number(x.created_at)
+        };
+      })
     });
   } catch (error) {
     console.error(error);
@@ -955,17 +945,17 @@ app.get("/api/admin/logs", admin, async (req, res) => {
   }
 });
 
+// ============================================================
+// TRIAL
+// ============================================================
+
 async function ensureTrialKey() {
   const configuredKey =
     process.env.TEST_KEY || "X23-TRIAL-30MIN";
 
   const existing = await pool.query(
-    `
-    SELECT id
-    FROM keys
-    WHERE key_hash = $1
-    LIMIT 1
-    `,
+    "SELECT id FROM keys " +
+    "WHERE key_hash = $1 LIMIT 1",
     [hashKey(configuredKey)]
   );
 
@@ -976,16 +966,9 @@ async function ensureTrialKey() {
   const createdAt = Date.now();
 
   await pool.query(
-    `
-    INSERT INTO keys (
-      id,
-      key_hash,
-      type,
-      created_at,
-      expires_at
-    )
-    VALUES ($1,$2,$3,$4,$5)
-    `,
+    "INSERT INTO keys (" +
+    "id, key_hash, type, created_at, expires_at" +
+    ") VALUES ($1,$2,$3,$4,$5)",
     [
       crypto.randomUUID(),
       hashKey(configuredKey),
@@ -1004,16 +987,8 @@ app.get("/api/trial", async (req, res) => {
       process.env.TEST_KEY || "X23-TRIAL-30MIN";
 
     const result = await pool.query(
-      `
-      SELECT
-        type,
-        created_at,
-        expires_at,
-        revoked
-      FROM keys
-      WHERE key_hash = $1
-      LIMIT 1
-      `,
+      "SELECT type, created_at, expires_at, revoked " +
+      "FROM keys WHERE key_hash = $1 LIMIT 1",
       [hashKey(configuredKey)]
     );
 
@@ -1046,7 +1021,11 @@ app.get("/api/trial", async (req, res) => {
   }
 });
 
-app.use((req, res, next) => {
+// ============================================================
+// FRONTEND
+// ============================================================
+
+app.use(function (req, res, next) {
   if (
     req.method === "GET" &&
     !req.path.startsWith("/api/")
@@ -1063,6 +1042,10 @@ app.use((req, res, next) => {
   next();
 });
 
+// ============================================================
+// INICIAR SERVIDOR
+// ============================================================
+
 async function startServer() {
   try {
     await initDB();
@@ -1071,10 +1054,10 @@ async function startServer() {
     app.listen(
       PORT,
       "0.0.0.0",
-      () => {
+      function () {
         console.log(
           "[SERVER] API escuchando en puerto " +
-            PORT
+          PORT
         );
 
         console.log(
