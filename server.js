@@ -11,6 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+
 const PORT = Number(process.env.PORT || 3000);
 
 // ============================================================
@@ -30,7 +31,11 @@ const SESSION_SECRET =
 const databaseUrl = process.env.DATABASE_URL;
 
 if (!databaseUrl) {
+  console.error("==================================================");
   console.error("ERROR: DATABASE_URL NO ESTÁ CONFIGURADA");
+  console.error("Ve a Render > Web Service > Environment");
+  console.error("y agrega/conecta la DATABASE_URL de PostgreSQL.");
+  console.error("==================================================");
   process.exit(1);
 }
 
@@ -45,7 +50,7 @@ const pool = new Pool({
 });
 
 // ============================================================
-// SESIONES
+// SESIONES ADMIN
 // ============================================================
 
 const sessions = new Map();
@@ -57,17 +62,19 @@ const sessions = new Map();
 app.use(express.json({ limit: "100kb" }));
 
 app.use(
-  express.static(
-    path.join(__dirname, "public")
-  )
+  express.static(path.join(__dirname, "public"))
 );
 
 // ============================================================
-// BASE DE DATOS
+// DATABASE INIT
 // ============================================================
 
 async function initDB() {
-  const createKeysTable = `
+  // ----------------------------------------------------------
+  // KEYS
+  // ----------------------------------------------------------
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS keys (
       id UUID PRIMARY KEY,
       key_hash TEXT UNIQUE NOT NULL,
@@ -78,18 +85,26 @@ async function initDB() {
       used_username TEXT,
       used_at BIGINT,
       revoked BOOLEAN NOT NULL DEFAULT FALSE
-    );
-  `;
+    )
+  `);
 
-  const createWhitelistTable = `
+  // ----------------------------------------------------------
+  // WHITELIST
+  // ----------------------------------------------------------
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS whitelist (
       roblox_user_id TEXT PRIMARY KEY,
       roblox_username TEXT,
       created_at BIGINT NOT NULL
-    );
-  `;
+    )
+  `);
 
-  const createLogsTable = `
+  // ----------------------------------------------------------
+  // LOGS DE USO DE KEYS
+  // ----------------------------------------------------------
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS key_logs (
       id UUID PRIMARY KEY,
       key_id UUID,
@@ -99,10 +114,16 @@ async function initDB() {
       success BOOLEAN NOT NULL DEFAULT FALSE,
       message TEXT,
       created_at BIGINT NOT NULL
-    );
-  `;
+    )
+  `);
 
-  const createTrialTable = `
+  // ----------------------------------------------------------
+  // USOS DE KEYS DE PRUEBA
+  // Permite que la misma trial key pueda ser usada
+  // una vez por cada usuario.
+  // ----------------------------------------------------------
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS trial_uses (
       id UUID PRIMARY KEY,
       key_id UUID NOT NULL,
@@ -110,29 +131,20 @@ async function initDB() {
       roblox_username TEXT,
       used_at BIGINT NOT NULL,
       UNIQUE(key_id, roblox_user_id)
-    );
-  `;
+    )
+  `);
 
-  await pool.query(createKeysTable);
-  await pool.query(createWhitelistTable);
-  await pool.query(createLogsTable);
-  await pool.query(createTrialTable);
-
-  console.log("[DB] Base de datos inicializada correctamente");
+  console.log("Base de datos inicializada correctamente");
 }
 
 // ============================================================
-// FUNCIONES DE KEY
+// KEY FUNCTIONS
 // ============================================================
 
 function hashKey(key) {
   return crypto
     .createHmac("sha256", SESSION_SECRET)
-    .update(
-      String(key)
-        .trim()
-        .toUpperCase()
-    )
+    .update(String(key).trim().toUpperCase())
     .digest("hex");
 }
 
@@ -142,17 +154,19 @@ function makeKey() {
     .toString("base64url")
     .toUpperCase();
 
-  return `X23-${raw.slice(0, 6)}-${raw.slice(6, 12)}-${raw.slice(12, 18)}`;
+  const part1 = raw.slice(0, 6);
+  const part2 = raw.slice(6, 12);
+  const part3 = raw.slice(12, 18);
+
+  return `X23-${part1}-${part2}-${part3}`;
 }
 
 function sessionToken() {
-  return crypto
-    .randomBytes(32)
-    .toString("hex");
+  return crypto.randomBytes(32).toString("hex");
 }
 
 // ============================================================
-// ADMIN
+// ADMIN AUTH
 // ============================================================
 
 function admin(req, res, next) {
@@ -169,13 +183,8 @@ function admin(req, res, next) {
 }
 
 function passwordMatches(input) {
-  const a = Buffer.from(
-    String(input || "")
-  );
-
-  const b = Buffer.from(
-    ADMIN_PASSWORD
-  );
+  const a = Buffer.from(String(input || ""));
+  const b = Buffer.from(ADMIN_PASSWORD);
 
   return (
     a.length === b.length &&
@@ -206,54 +215,42 @@ app.get("/health", async (req, res) => {
 });
 
 // ============================================================
-// LOGIN
+// ADMIN LOGIN
 // ============================================================
 
-app.post(
-  "/api/admin/login",
-  (req, res) => {
-    if (
-      !passwordMatches(
-        req.body?.password
-      )
-    ) {
-      return res.status(401).json({
-        success: false,
-        message: "Contraseña incorrecta"
-      });
-    }
-
-    const token = sessionToken();
-
-    sessions.set(token, {
-      createdAt: Date.now()
-    });
-
-    res.json({
-      success: true,
-      token
+app.post("/api/admin/login", (req, res) => {
+  if (!passwordMatches(req.body?.password)) {
+    return res.status(401).json({
+      success: false,
+      message: "Contraseña incorrecta"
     });
   }
-);
+
+  const token = sessionToken();
+
+  sessions.set(token, {
+    createdAt: Date.now()
+  });
+
+  res.json({
+    success: true,
+    token
+  });
+});
 
 // ============================================================
-// LOGOUT
+// ADMIN LOGOUT
 // ============================================================
 
-app.post(
-  "/api/admin/logout",
-  admin,
-  (req, res) => {
-    const token =
-      req.headers["x-admin-token"];
+app.post("/api/admin/logout", admin, (req, res) => {
+  const token = req.headers["x-admin-token"];
 
-    sessions.delete(token);
+  sessions.delete(token);
 
-    res.json({
-      success: true
-    });
-  }
-);
+  res.json({
+    success: true
+  });
+});
 
 // ============================================================
 // GENERAR KEYS
@@ -272,9 +269,7 @@ app.post(
         1,
         Math.min(
           100,
-          Number(
-            req.body?.amount || 1
-          )
+          Number(req.body?.amount || 1)
         )
       );
 
@@ -290,39 +285,27 @@ app.post(
         type === "permanent" ||
         type === "perm";
 
-      if (
-        !permanent &&
-        !units[type]
-      ) {
+      if (!permanent && !units[type]) {
         return res.status(400).json({
           success: false,
           message: "Duración inválida"
         });
       }
 
-      const createdAt =
-        Date.now();
+      const createdAt = Date.now();
 
-      const expiresAt =
-        permanent
-          ? null
-          : createdAt + units[type];
+      const expiresAt = permanent
+        ? null
+        : createdAt + units[type];
 
       const generated = [];
 
-      const client =
-        await pool.connect();
+      const client = await pool.connect();
 
       try {
-        await client.query(
-          "BEGIN"
-        );
+        await client.query("BEGIN");
 
-        for (
-          let i = 0;
-          i < amount;
-          i++
-        ) {
+        for (let i = 0; i < amount; i++) {
           let key;
           let inserted = false;
 
@@ -332,27 +315,20 @@ app.post(
             try {
               await client.query(
                 `
-                INSERT INTO keys (
+                INSERT INTO keys
+                (
                   id,
                   key_hash,
                   type,
                   created_at,
                   expires_at
                 )
-                VALUES (
-                  $1,
-                  $2,
-                  $3,
-                  $4,
-                  $5
-                )
+                VALUES ($1, $2, $3, $4, $5)
                 `,
                 [
                   crypto.randomUUID(),
                   hashKey(key),
-                  permanent
-                    ? "permanent"
-                    : type,
+                  permanent ? "permanent" : type,
                   createdAt,
                   expiresAt
                 ]
@@ -360,10 +336,7 @@ app.post(
 
               inserted = true;
             } catch (error) {
-              if (
-                error.code ===
-                "23505"
-              ) {
+              if (error.code === "23505") {
                 continue;
               }
 
@@ -380,18 +353,14 @@ app.post(
           });
         }
 
-        await client.query(
-          "COMMIT"
-        );
+        await client.query("COMMIT");
 
         res.json({
           success: true,
           keys: generated
         });
       } catch (error) {
-        await client.query(
-          "ROLLBACK"
-        );
+        await client.query("ROLLBACK");
 
         console.error(
           "Error generando keys:",
@@ -400,8 +369,7 @@ app.post(
 
         res.status(500).json({
           success: false,
-          message:
-            "No se pudieron generar las keys"
+          message: "No se pudieron generar las keys"
         });
       } finally {
         client.release();
@@ -411,8 +379,7 @@ app.post(
 
       res.status(500).json({
         success: false,
-        message:
-          "Error interno"
+        message: "Error interno"
       });
     }
   }
@@ -427,65 +394,49 @@ app.get(
   admin,
   async (req, res) => {
     try {
-      const result =
-        await pool.query(`
-          SELECT
-            id,
-            type,
-            created_at,
-            expires_at,
-            used_by,
-            used_username,
-            used_at,
-            revoked
-          FROM keys
-          ORDER BY created_at DESC
-        `);
+      const result = await pool.query(`
+        SELECT
+          id,
+          type,
+          created_at,
+          expires_at,
+          used_by,
+          used_username,
+          used_at,
+          revoked
+        FROM keys
+        ORDER BY created_at DESC
+      `);
 
       res.json({
         success: true,
-        keys: result.rows.map(
-          (k) => ({
-            id: k.id,
-            type: k.type,
-            createdAt:
-              Number(
-                k.created_at
-              ),
-            expiresAt:
-              k.expires_at === null
-                ? null
-                : Number(
-                    k.expires_at
-                  ),
-            usedBy: k.used_by,
-            usedUsername:
-              k.used_username,
-            usedAt:
-              k.used_at === null
-                ? null
-                : Number(
-                    k.used_at
-                  ),
-            revoked:
-              k.revoked,
-            expired:
-              !k.revoked &&
-              k.expires_at !==
-                null &&
-              Number(
-                k.expires_at
-              ) <= Date.now()
-          })
-        )
+        keys: result.rows.map((k) => ({
+          id: k.id,
+          type: k.type,
+          createdAt: Number(k.created_at),
+          expiresAt:
+            k.expires_at === null
+              ? null
+              : Number(k.expires_at),
+          usedBy: k.used_by,
+          usedUsername: k.used_username,
+          usedAt:
+            k.used_at === null
+              ? null
+              : Number(k.used_at),
+          revoked: k.revoked,
+          expired:
+            !k.revoked &&
+            k.expires_at !== null &&
+            Number(k.expires_at) <= Date.now()
+        }))
       });
     } catch (error) {
       console.error(error);
 
       res.status(500).json({
         success: false,
-        message:
-          "No se pudieron obtener las keys"
+        message: "No se pudieron obtener las keys"
       });
     }
   }
@@ -500,21 +451,19 @@ app.post(
   admin,
   async (req, res) => {
     try {
-      const result =
-        await pool.query(
-          `
-          UPDATE keys
-          SET revoked = TRUE
-          WHERE id = $1
-          `,
-          [req.params.id]
-        );
+      const result = await pool.query(
+        `
+        UPDATE keys
+        SET revoked = TRUE
+        WHERE id = $1
+        `,
+        [req.params.id]
+      );
 
       if (!result.rowCount) {
         return res.status(404).json({
           success: false,
-          message:
-            "Key no encontrada"
+          message: "Key no encontrada"
         });
       }
 
@@ -526,8 +475,7 @@ app.post(
 
       res.status(500).json({
         success: false,
-        message:
-          "No se pudo revocar la key"
+        message: "No se pudo revocar la key"
       });
     }
   }
@@ -542,20 +490,18 @@ app.delete(
   admin,
   async (req, res) => {
     try {
-      const result =
-        await pool.query(
-          `
-          DELETE FROM keys
-          WHERE id = $1
-          `,
-          [req.params.id]
-        );
+      const result = await pool.query(
+        `
+        DELETE FROM keys
+        WHERE id = $1
+        `,
+        [req.params.id]
+      );
 
       if (!result.rowCount) {
         return res.status(404).json({
           success: false,
-          message:
-            "Key no encontrada"
+          message: "Key no encontrada"
         });
       }
 
@@ -567,8 +513,7 @@ app.delete(
 
       res.status(500).json({
         success: false,
-        message:
-          "No se pudo eliminar la key"
+        message: "No se pudo eliminar la key"
       });
     }
   }
@@ -591,8 +536,7 @@ app.post(
       ).trim();
 
       const username = String(
-        req.body?.username ||
-          userId
+        req.body?.username || userId
       ).trim();
 
       if (!code) {
@@ -607,31 +551,30 @@ app.post(
         return res.json({
           valid: false,
           permanent: false,
-          message:
-            "Usuario de Roblox requerido"
+          message: "Usuario de Roblox requerido"
         });
       }
 
-      const whitelist =
-        await pool.query(
-          `
-          SELECT
-            roblox_user_id,
-            roblox_username
-          FROM whitelist
-          WHERE roblox_user_id = $1
-          `,
-          [userId]
-        );
+      // ------------------------------------------------------
+      // WHITELIST
+      // ------------------------------------------------------
 
-      if (!whitelist.rows.length) {
+      const whitelistResult = await pool.query(
+        `
+        SELECT roblox_user_id, roblox_username
+        FROM whitelist
+        WHERE roblox_user_id = $1
+        `,
+        [userId]
+      );
+
+      if (!whitelistResult.rows.length) {
         await writeKeyLog({
           robloxUserId: userId,
           robloxUsername: username,
           action: "validate",
           success: false,
-          message:
-            "Usuario no está en whitelist"
+          message: "Usuario no está en whitelist"
         });
 
         return res.json({
@@ -643,18 +586,29 @@ app.post(
         });
       }
 
-      const keyResult =
-        await pool.query(
-          `
-          SELECT *
-          FROM keys
-          WHERE key_hash = $1
-          LIMIT 1
-          `,
-          [hashKey(code)]
-        );
+      // ------------------------------------------------------
+      // BUSCAR KEY
+      // ------------------------------------------------------
+
+      const keyResult = await pool.query(
+        `
+        SELECT *
+        FROM keys
+        WHERE key_hash = $1
+        LIMIT 1
+        `,
+        [hashKey(code)]
+      );
 
       if (!keyResult.rows.length) {
+        await writeKeyLog({
+          robloxUserId: userId,
+          robloxUsername: username,
+          action: "validate",
+          success: false,
+          message: "Key inválida"
+        });
+
         return res.json({
           valid: false,
           permanent: false,
@@ -663,10 +617,22 @@ app.post(
         });
       }
 
-      const key =
-        keyResult.rows[0];
+      const k = keyResult.rows[0];
 
-      if (key.revoked) {
+      // ------------------------------------------------------
+      // REVOCADA
+      // ------------------------------------------------------
+
+      if (k.revoked) {
+        await writeKeyLog({
+          keyId: k.id,
+          robloxUserId: userId,
+          robloxUsername: username,
+          action: "validate",
+          success: false,
+          message: "Key revocada"
+        });
+
         return res.json({
           valid: false,
           permanent: false,
@@ -675,12 +641,23 @@ app.post(
         });
       }
 
+      // ------------------------------------------------------
+      // EXPIRADA
+      // ------------------------------------------------------
+
       if (
-        key.expires_at !== null &&
-        Number(
-          key.expires_at
-        ) <= Date.now()
+        k.expires_at !== null &&
+        Number(k.expires_at) <= Date.now()
       ) {
+        await writeKeyLog({
+          keyId: k.id,
+          robloxUserId: userId,
+          robloxUsername: username,
+          action: "validate",
+          success: false,
+          message: "Key expirada"
+        });
+
         return res.json({
           valid: false,
           permanent: false,
@@ -689,26 +666,35 @@ app.post(
         });
       }
 
-      if (
-        key.type ===
-        "trial"
-      ) {
-        const used =
-          await pool.query(
-            `
-            SELECT id
-            FROM trial_uses
-            WHERE key_id = $1
-            AND roblox_user_id = $2
-            LIMIT 1
-            `,
-            [
-              key.id,
-              userId
-            ]
-          );
+      // ------------------------------------------------------
+      // TRIAL
+      //
+      // Las keys de tipo "trial" pueden ser usadas una vez
+      // por cada usuario de Roblox.
+      // ------------------------------------------------------
 
-        if (used.rows.length) {
+      if (k.type === "trial") {
+        const trialUse = await pool.query(
+          `
+          SELECT id
+          FROM trial_uses
+          WHERE key_id = $1
+          AND roblox_user_id = $2
+          LIMIT 1
+          `,
+          [k.id, userId]
+        );
+
+        if (trialUse.rows.length) {
+          await writeKeyLog({
+            keyId: k.id,
+            robloxUserId: userId,
+            robloxUsername: username,
+            action: "trial",
+            success: false,
+            message: "Trial ya utilizada por este usuario"
+          });
+
           return res.json({
             valid: false,
             permanent: false,
@@ -720,24 +706,19 @@ app.post(
 
         await pool.query(
           `
-          INSERT INTO trial_uses (
+          INSERT INTO trial_uses
+          (
             id,
             key_id,
             roblox_user_id,
             roblox_username,
             used_at
           )
-          VALUES (
-            $1,
-            $2,
-            $3,
-            $4,
-            $5
-          )
+          VALUES ($1, $2, $3, $4, $5)
           `,
           [
             crypto.randomUUID(),
-            key.id,
+            k.id,
             userId,
             username,
             Date.now()
@@ -745,13 +726,12 @@ app.post(
         );
 
         await writeKeyLog({
-          keyId: key.id,
+          keyId: k.id,
           robloxUserId: userId,
           robloxUsername: username,
           action: "trial",
           success: true,
-          message:
-            "Trial activada"
+          message: "Trial activada"
         });
 
         return res.json({
@@ -759,23 +739,31 @@ app.post(
           permanent: false,
           trial: true,
           whitelisted: true,
-          message:
-            "Key de prueba activada",
+          message: "Key de prueba activada",
           expiresAt:
-            key.expires_at === null
+            k.expires_at === null
               ? null
-              : Number(
-                  key.expires_at
-                )
+              : Number(k.expires_at)
         });
       }
 
+      // ------------------------------------------------------
+      // KEY NORMAL YA VINCULADA
+      // ------------------------------------------------------
+
       if (
-        key.used_by &&
-        String(
-          key.used_by
-        ) !== userId
+        k.used_by &&
+        String(k.used_by) !== userId
       ) {
+        await writeKeyLog({
+          keyId: k.id,
+          robloxUserId: userId,
+          robloxUsername: username,
+          action: "validate",
+          success: false,
+          message: "Key vinculada a otro usuario"
+        });
+
         return res.json({
           valid: false,
           permanent: false,
@@ -785,7 +773,11 @@ app.post(
         });
       }
 
-      if (!key.used_by) {
+      // ------------------------------------------------------
+      // VINCULAR KEY NORMAL
+      // ------------------------------------------------------
+
+      if (!k.used_by) {
         await pool.query(
           `
           UPDATE keys
@@ -799,36 +791,34 @@ app.post(
             userId,
             username,
             Date.now(),
-            key.id
+            k.id
           ]
         );
       }
 
       await writeKeyLog({
-        keyId: key.id,
+        keyId: k.id,
         robloxUserId: userId,
         robloxUsername: username,
         action: "validate",
         success: true,
-        message:
-          "Key válida"
+        message: "Key válida"
       });
+
+      // ------------------------------------------------------
+      // RESPUESTA
+      // ------------------------------------------------------
 
       return res.json({
         valid: true,
-        permanent:
-          key.type ===
-          "permanent",
+        permanent: k.type === "permanent",
         trial: false,
         whitelisted: true,
-        message:
-          "Key válida",
+        message: "Key válida",
         expiresAt:
-          key.expires_at === null
+          k.expires_at === null
             ? null
-            : Number(
-                key.expires_at
-              )
+            : Number(k.expires_at)
       });
     } catch (error) {
       console.error(
@@ -839,8 +829,7 @@ app.post(
       res.status(500).json({
         valid: false,
         permanent: false,
-        message:
-          "Error interno del servidor"
+        message: "Error interno del servidor"
       });
     }
   }
@@ -854,37 +843,32 @@ app.post(
   "/api/whitelist/check",
   async (req, res) => {
     try {
-      const userId =
-        String(
-          req.body?.robloxUserId ||
-            ""
-        ).trim();
+      const robloxUserId = String(
+        req.body?.robloxUserId || ""
+      ).trim();
 
-      if (!userId) {
+      if (!robloxUserId) {
         return res.json({
           whitelisted: false,
           username: null
         });
       }
 
-      const result =
-        await pool.query(
-          `
-          SELECT
-            roblox_user_id,
-            roblox_username
-          FROM whitelist
-          WHERE roblox_user_id = $1
-          `,
-          [userId]
-        );
+      const result = await pool.query(
+        `
+        SELECT roblox_user_id, roblox_username
+        FROM whitelist
+        WHERE roblox_user_id = $1
+        `,
+        [robloxUserId]
+      );
 
       res.json({
         whitelisted:
           result.rows.length > 0,
+
         username:
-          result.rows[0]
-            ?.roblox_username ||
+          result.rows[0]?.roblox_username ||
           null
       });
     } catch (error) {
@@ -906,44 +890,33 @@ app.post(
   "/api/whitelist",
   async (req, res) => {
     try {
-      const id =
-        String(
-          req.body?.robloxUserId ||
-            ""
-        ).trim();
+      const id = String(
+        req.body?.robloxUserId || ""
+      ).trim();
 
-      const username =
-        String(
-          req.body?.robloxUsername ||
-            id
-        ).trim();
+      const username = String(
+        req.body?.robloxUsername || id
+      ).trim();
 
       if (!id) {
         return res.status(400).json({
           success: false,
-          message:
-            "User ID requerido"
+          message: "User ID requerido"
         });
       }
 
       await pool.query(
         `
-        INSERT INTO whitelist (
+        INSERT INTO whitelist
+        (
           roblox_user_id,
           roblox_username,
           created_at
         )
-        VALUES (
-          $1,
-          $2,
-          $3
-        )
-        ON CONFLICT (
-          roblox_user_id
-        )
+        VALUES ($1, $2, $3)
+        ON CONFLICT (roblox_user_id)
         DO UPDATE SET
-          roblox_username =
-            EXCLUDED.roblox_username
+          roblox_username = EXCLUDED.roblox_username
         `,
         [
           id,
@@ -977,29 +950,26 @@ app.get(
   "/api/whitelist",
   async (req, res) => {
     try {
-      const result =
-        await pool.query(`
-          SELECT
-            roblox_user_id,
-            roblox_username,
-            created_at
-          FROM whitelist
-          ORDER BY created_at DESC
-        `);
+      const result = await pool.query(`
+        SELECT
+          roblox_user_id,
+          roblox_username,
+          created_at
+        FROM whitelist
+        ORDER BY created_at DESC
+      `);
 
       res.json(
-        result.rows.map(
-          (x) => ({
-            robloxUserId:
-              x.roblox_user_id,
-            robloxUsername:
-              x.roblox_username,
-            createdAt:
-              Number(
-                x.created_at
-              )
-          })
-        )
+        result.rows.map((x) => ({
+          robloxUserId:
+            x.roblox_user_id,
+
+          robloxUsername:
+            x.roblox_username,
+
+          createdAt:
+            Number(x.created_at)
+        }))
       );
     } catch (error) {
       console.error(error);
@@ -1022,18 +992,13 @@ app.delete(
   admin,
   async (req, res) => {
     try {
-      const result =
-        await pool.query(
-          `
-          DELETE FROM whitelist
-          WHERE roblox_user_id = $1
-          `,
-          [
-            String(
-              req.params.userId
-            )
-          ]
-        );
+      const result = await pool.query(
+        `
+        DELETE FROM whitelist
+        WHERE roblox_user_id = $1
+        `,
+        [String(req.params.userId)]
+      );
 
       if (!result.rowCount) {
         return res.status(404).json({
@@ -1067,57 +1032,57 @@ app.get(
   admin,
   async (req, res) => {
     try {
-      const keys =
-        await pool.query(`
-          SELECT COUNT(*)::int AS count
-          FROM keys
-        `);
+      const keysResult = await pool.query(`
+        SELECT COUNT(*)::int AS count
+        FROM keys
+      `);
 
-      const active =
-        await pool.query(
-          `
-          SELECT COUNT(*)::int AS count
-          FROM keys
-          WHERE revoked = FALSE
-          AND (
-            expires_at IS NULL
-            OR expires_at > $1
-          )
-          `,
-          [Date.now()]
-        );
+      const activeResult = await pool.query(
+        `
+        SELECT COUNT(*)::int AS count
+        FROM keys
+        WHERE revoked = FALSE
+        AND (
+          expires_at IS NULL
+          OR expires_at > $1
+        )
+        `,
+        [Date.now()]
+      );
 
-      const revoked =
-        await pool.query(`
-          SELECT COUNT(*)::int AS count
-          FROM keys
-          WHERE revoked = TRUE
-        `);
+      const revokedResult = await pool.query(`
+        SELECT COUNT(*)::int AS count
+        FROM keys
+        WHERE revoked = TRUE
+      `);
 
-      const whitelist =
-        await pool.query(`
-          SELECT COUNT(*)::int AS count
-          FROM whitelist
-        `);
+      const whitelistResult = await pool.query(`
+        SELECT COUNT(*)::int AS count
+        FROM whitelist
+      `);
 
-      const logs =
-        await pool.query(`
-          SELECT COUNT(*)::int AS count
-          FROM key_logs
-        `);
+      const logsResult = await pool.query(`
+        SELECT COUNT(*)::int AS count
+        FROM key_logs
+      `);
 
       res.json({
         success: true,
+
         totalKeys:
-          keys.rows[0].count,
+          keysResult.rows[0].count,
+
         activeKeys:
-          active.rows[0].count,
+          activeResult.rows[0].count,
+
         revokedKeys:
-          revoked.rows[0].count,
+          revokedResult.rows[0].count,
+
         whitelistUsers:
-          whitelist.rows[0].count,
+          whitelistResult.rows[0].count,
+
         totalLogs:
-          logs.rows[0].count
+          logsResult.rows[0].count
       });
     } catch (error) {
       console.error(error);
@@ -1146,7 +1111,8 @@ async function writeKeyLog({
   try {
     await pool.query(
       `
-      INSERT INTO key_logs (
+      INSERT INTO key_logs
+      (
         id,
         key_id,
         roblox_user_id,
@@ -1156,16 +1122,7 @@ async function writeKeyLog({
         message,
         created_at
       )
-      VALUES (
-        $1,
-        $2,
-        $3,
-        $4,
-        $5,
-        $6,
-        $7,
-        $8
-      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       `,
       [
         crypto.randomUUID(),
@@ -1187,7 +1144,7 @@ async function writeKeyLog({
 }
 
 // ============================================================
-// OBTENER LOGS
+// OBTENER LOGS ADMIN
 // ============================================================
 
 app.get(
@@ -1195,60 +1152,47 @@ app.get(
   admin,
   async (req, res) => {
     try {
-      const limit =
-        Math.max(
-          1,
-          Math.min(
-            200,
-            Number(
-              req.query.limit ||
-                100
-            )
-          )
-        );
+      const limit = Math.max(
+        1,
+        Math.min(
+          200,
+          Number(req.query.limit || 100)
+        )
+      );
 
-      const result =
-        await pool.query(
-          `
-          SELECT
-            id,
-            key_id,
-            roblox_user_id,
-            roblox_username,
-            action,
-            success,
-            message,
-            created_at
-          FROM key_logs
-          ORDER BY created_at DESC
-          LIMIT $1
-          `,
-          [limit]
-        );
+      const result = await pool.query(
+        `
+        SELECT
+          id,
+          key_id,
+          roblox_user_id,
+          roblox_username,
+          action,
+          success,
+          message,
+          created_at
+        FROM key_logs
+        ORDER BY created_at DESC
+        LIMIT $1
+        `,
+        [limit]
+      );
 
       res.json({
         success: true,
-        logs:
-          result.rows.map(
-            (x) => ({
-              id: x.id,
-              keyId: x.key_id,
-              robloxUserId:
-                x.roblox_user_id,
-              robloxUsername:
-                x.roblox_username,
-              action:
-                x.action,
-              success:
-                x.success,
-              message:
-                x.message,
-              createdAt:
-                Number(
-                  x.created_at
-                )
-            })
-          )
+        logs: result.rows.map((x) => ({
+          id: x.id,
+          keyId: x.key_id,
+          robloxUserId:
+            x.roblox_user_id,
+          robloxUsername:
+            x.roblox_username,
+          action: x.action,
+          success: x.success,
+          message: x.message,
+          createdAt:
+            Number(x.created_at)
+        }))
       });
     } catch (error) {
       console.error(error);
@@ -1263,7 +1207,17 @@ app.get(
 );
 
 // ============================================================
-// TRIAL
+// CREAR / ASEGURAR KEY DE PRUEBA
+// ============================================================
+//
+// Se puede definir una key fija mediante:
+//
+// TEST_KEY=X23-TRIAL-30MIN
+//
+// Si TEST_KEY no existe, se genera automáticamente.
+// La key dura 30 minutos desde que se crea.
+// Cada usuario puede utilizarla una sola vez.
+//
 // ============================================================
 
 async function ensureTrialKey() {
@@ -1271,55 +1225,52 @@ async function ensureTrialKey() {
     process.env.TEST_KEY ||
     "X23-TRIAL-30MIN";
 
-  const existing =
-    await pool.query(
-      `
-      SELECT id
-      FROM keys
-      WHERE key_hash = $1
-      LIMIT 1
-      `,
-      [hashKey(configuredKey)]
-    );
+  const existing = await pool.query(
+    `
+    SELECT id, expires_at
+    FROM keys
+    WHERE key_hash = $1
+    LIMIT 1
+    `,
+    [hashKey(configuredKey)]
+  );
 
   if (existing.rows.length) {
     return;
   }
 
-  const createdAt =
-    Date.now();
+  const createdAt = Date.now();
 
   await pool.query(
     `
-    INSERT INTO keys (
+    INSERT INTO keys
+    (
       id,
       key_hash,
       type,
       created_at,
       expires_at
     )
-    VALUES (
-      $1,
-      $2,
-      $3,
-      $4,
-      $5
-    )
+    VALUES ($1, $2, $3, $4, $5)
     `,
     [
       crypto.randomUUID(),
       hashKey(configuredKey),
       "trial",
       createdAt,
-      createdAt +
-        30 * 60 * 1000
+      createdAt + 30 * 60 * 1000
     ]
   );
 
   console.log(
-    "[TRIAL] Key creada"
+    "Key de prueba creada:",
+    configuredKey
   );
 }
+
+// ============================================================
+// INFO DE LA TRIAL KEY
+// ============================================================
 
 app.get(
   "/api/trial",
@@ -1329,20 +1280,19 @@ app.get(
         process.env.TEST_KEY ||
         "X23-TRIAL-30MIN";
 
-      const result =
-        await pool.query(
-          `
-          SELECT
-            type,
-            created_at,
-            expires_at,
-            revoked
-          FROM keys
-          WHERE key_hash = $1
-          LIMIT 1
-          `,
-          [hashKey(configuredKey)]
-        );
+      const result = await pool.query(
+        `
+        SELECT
+          type,
+          created_at,
+          expires_at,
+          revoked
+        FROM keys
+        WHERE key_hash = $1
+        LIMIT 1
+        `,
+        [hashKey(configuredKey)]
+      );
 
       if (!result.rows.length) {
         return res.status(404).json({
@@ -1352,21 +1302,17 @@ app.get(
         });
       }
 
-      const key =
-        result.rows[0];
+      const k = result.rows[0];
 
       res.json({
         success: true,
         key: configuredKey,
         type: "trial",
         expiresAt:
-          key.expires_at === null
+          k.expires_at === null
             ? null
-            : Number(
-                key.expires_at
-              ),
-        revoked:
-          key.revoked
+            : Number(k.expires_at),
+        revoked: k.revoked
       });
     } catch (error) {
       console.error(error);
@@ -1384,34 +1330,31 @@ app.get(
 // FRONTEND
 // ============================================================
 
-app.use(
-  (req, res, next) => {
-    if (
-      req.method === "GET" &&
-      !req.path.startsWith(
-        "/api/"
+app.use((req, res, next) => {
+  if (
+    req.method === "GET" &&
+    !req.path.startsWith("/api/")
+  ) {
+    return res.sendFile(
+      path.join(
+        __dirname,
+        "public",
+        "index.html"
       )
-    ) {
-      return res.sendFile(
-        path.join(
-          __dirname,
-          "public",
-          "index.html"
-        )
-      );
-    }
-
-    next();
+    );
   }
-);
+
+  next();
+});
 
 // ============================================================
-// INICIAR SERVIDOR
+// START SERVER
 // ============================================================
 
 async function startServer() {
   try {
     await initDB();
+
     await ensureTrialKey();
 
     app.listen(
@@ -1419,29 +1362,29 @@ async function startServer() {
       "0.0.0.0",
       () => {
         console.log(
-          `[SERVER] API escuchando en puerto ${PORT}`
+          `API escuchando en puerto ${PORT}`
         );
 
         console.log(
-          "[SERVER] Base de datos: CONECTADA"
+          "Base de datos: CONECTADA"
         );
 
         console.log(
-          "[SERVER] Whitelist obligatoria: ACTIVADA"
+          "Whitelist obligatoria: ACTIVADA"
         );
 
         console.log(
-          "[SERVER] Logs de keys: ACTIVADOS"
+          "Logs de keys: ACTIVADOS"
         );
 
         console.log(
-          "[SERVER] Trial: ACTIVADA"
+          "Trial de 30 minutos: ACTIVADA"
         );
       }
     );
   } catch (error) {
     console.error(
-      "[SERVER] No se pudo inicializar la DB:"
+      "No se pudo inicializar la DB:"
     );
 
     console.error(error);
