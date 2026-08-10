@@ -6,9 +6,12 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const { Pool } = pg;
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
+
 const PORT = Number(process.env.PORT || 3000);
 
 // ============================================================
@@ -21,12 +24,6 @@ const SESSION_SECRET =
   process.env.SESSION_SECRET ||
   crypto.randomBytes(32).toString("hex");
 
-if (!process.env.ADMIN_PASSWORD) {
-  console.warn(
-    "WARNING: ADMIN_PASSWORD no está configurada; se está usando el valor predeterminado."
-  );
-}
-
 // ============================================================
 // DATABASE
 // ============================================================
@@ -38,7 +35,12 @@ const pool = new Pool({
     : false
 });
 
+// Sesiones de administrador
 const sessions = new Map();
+
+// ============================================================
+// MIDDLEWARE
+// ============================================================
 
 app.use(express.json({ limit: "100kb" }));
 
@@ -49,8 +51,9 @@ app.use(
 );
 
 // ============================================================
-// INICIALIZAR BASE DE DATOS
+// DATABASE INIT
 // ============================================================
+
 async function initDB() {
   const createKeysTable = [
     "CREATE TABLE IF NOT EXISTS keys (",
@@ -80,23 +83,22 @@ async function initDB() {
   console.log("Base de datos inicializada correctamente");
 }
 
+// ============================================================
+// KEY FUNCTIONS
+// ============================================================
 
 function hashKey(key) {
   return crypto
-    .createHmac(
-      "sha256",
-      SESSION_SECRET
-    )
-    .update(
-      String(key)
-        .trim()
-        .toUpperCase()
-    )
+    .createHmac("sha256", SESSION_SECRET)
+    .update(String(key).trim().toUpperCase())
     .digest("hex");
 }
 
 function makeKey() {
-  const raw = crypto.randomBytes(18).toString("base64url").toUpperCase();
+  const raw = crypto
+    .randomBytes(18)
+    .toString("base64url")
+    .toUpperCase();
 
   const part1 = raw.slice(0, 6);
   const part2 = raw.slice(6, 12);
@@ -106,19 +108,17 @@ function makeKey() {
 }
 
 function sessionToken() {
-  return crypto
-    .randomBytes(32)
-    .toString("hex");
+  return crypto.randomBytes(32).toString("hex");
 }
 
-function admin(req, res, next) {
-  const token =
-    req.headers["x-admin-token"];
+// ============================================================
+// ADMIN AUTH
+// ============================================================
 
-  if (
-    !token ||
-    !sessions.has(token)
-  ) {
+function admin(req, res, next) {
+  const token = req.headers["x-admin-token"];
+
+  if (!token || !sessions.has(token)) {
     return res.status(401).json({
       success: false,
       message: "No autorizado"
@@ -129,13 +129,8 @@ function admin(req, res, next) {
 }
 
 function passwordMatches(input) {
-  const a = Buffer.from(
-    String(input || "")
-  );
-
-  const b = Buffer.from(
-    ADMIN_PASSWORD
-  );
+  const a = Buffer.from(String(input || ""));
+  const b = Buffer.from(ADMIN_PASSWORD);
 
   return (
     a.length === b.length &&
@@ -144,10 +139,10 @@ function passwordMatches(input) {
 }
 
 // ============================================================
-// HEALTH CHECK
+// HEALTH
 // ============================================================
 
-app.get("/health", (_req, res) => {
+app.get("/health", function (req, res) {
   res.json({
     ok: true,
     service: "roblox-key-api"
@@ -155,54 +150,42 @@ app.get("/health", (_req, res) => {
 });
 
 // ============================================================
-// LOGIN ADMIN
+// ADMIN LOGIN
 // ============================================================
 
-app.post(
-  "/api/admin/login",
-  (req, res) => {
-    if (
-      !passwordMatches(
-        req.body?.password
-      )
-    ) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Contraseña incorrecta"
-      });
-    }
-
-    const token = sessionToken();
-
-    sessions.set(token, {
-      createdAt: Date.now()
-    });
-
-    res.json({
-      success: true,
-      token
+app.post("/api/admin/login", function (req, res) {
+  if (!passwordMatches(req.body?.password)) {
+    return res.status(401).json({
+      success: false,
+      message: "Contraseña incorrecta"
     });
   }
-);
+
+  const token = sessionToken();
+
+  sessions.set(token, {
+    createdAt: Date.now()
+  });
+
+  res.json({
+    success: true,
+    token: token
+  });
+});
 
 // ============================================================
-// LOGOUT ADMIN
+// ADMIN LOGOUT
 // ============================================================
 
-app.post(
-  "/api/admin/logout",
-  admin,
-  (req, res) => {
-    sessions.delete(
-      req.headers["x-admin-token"]
-    );
+app.post("/api/admin/logout", admin, function (req, res) {
+  const token = req.headers["x-admin-token"];
 
-    res.json({
-      success: true
-    });
-  }
-);
+  sessions.delete(token);
+
+  res.json({
+    success: true
+  });
+});
 
 // ============================================================
 // GENERAR KEYS
@@ -211,120 +194,109 @@ app.post(
 app.post(
   "/api/admin/keys/generate",
   admin,
-  async (req, res) => {
-    const type = String(
-      req.body?.type || "hours"
-    ).toLowerCase();
-
-    const amount = Math.max(
-      1,
-      Math.min(
-        100,
-        Number(
-          req.body?.amount || 1
-        )
-      )
-    );
-
-    const units = {
-      minutes: 60_000,
-      hours: 3_600_000,
-      days: 86_400_000,
-      weeks: 604_800_000,
-      months: 2_592_000_000
-    };
-
-    const permanent =
-      type === "permanent" ||
-      type === "perm";
-
-    if (
-      !permanent &&
-      !units[type]
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Duración inválida"
-      });
-    }
-
-    const createdAt = Date.now();
-
-    const expiresAt = permanent
-      ? null
-      : createdAt + units[type];
-
-    const generated = [];
-
-    const client =
-      await pool.connect();
-
+  async function (req, res) {
     try {
-      await client.query(
-        "BEGIN"
+      const type = String(
+        req.body?.type || "hours"
+      ).toLowerCase();
+
+      const amount = Math.max(
+        1,
+        Math.min(
+          100,
+          Number(req.body?.amount || 1)
+        )
       );
 
-      for (
-        let i = 0;
-        i < amount;
-        i++
-      ) {
-        const key = makeKey();
+      const units = {
+        minutes: 60000,
+        hours: 3600000,
+        days: 86400000,
+        weeks: 604800000,
+        months: 2592000000
+      };
 
-        await client.query(
-          `INSERT INTO keys
-          (
-            id,
-            key_hash,
-            type,
-            created_at,
-            expires_at
-          )
-          VALUES
-          ($1,$2,$3,$4,$5)`,
-          [
-            crypto.randomUUID(),
-            hashKey(key),
-            permanent
-              ? "permanent"
-              : type,
-            createdAt,
-            expiresAt
-          ]
-        );
+      const permanent =
+        type === "permanent" ||
+        type === "perm";
 
-        generated.push({
-          key,
-          type: permanent
-            ? "permanent"
-            : type,
-          expiresAt
+      if (!permanent && !units[type]) {
+        return res.status(400).json({
+          success: false,
+          message: "Duración inválida"
         });
       }
 
-      await client.query(
-        "COMMIT"
-      );
+      const createdAt = Date.now();
 
-      res.json({
-        success: true,
-        keys: generated
-      });
-    } catch (e) {
-      await client.query(
-        "ROLLBACK"
-      );
+      const expiresAt = permanent
+        ? null
+        : createdAt + units[type];
 
-      console.error(e);
+      const generated = [];
+
+      const client = await pool.connect();
+
+      try {
+        await client.query("BEGIN");
+
+        for (let i = 0; i < amount; i++) {
+          const key = makeKey();
+
+          const insertQuery = [
+            "INSERT INTO keys",
+            "(id, key_hash, type, created_at, expires_at)",
+            "VALUES ($1, $2, $3, $4, $5)"
+          ].join(" ");
+
+          await client.query(
+            insertQuery,
+            [
+              crypto.randomUUID(),
+              hashKey(key),
+              permanent ? "permanent" : type,
+              createdAt,
+              expiresAt
+            ]
+          );
+
+          generated.push({
+            key: key,
+            type: permanent
+              ? "permanent"
+              : type,
+            expiresAt: expiresAt
+          });
+        }
+
+        await client.query("COMMIT");
+
+        res.json({
+          success: true,
+          keys: generated
+        });
+      } catch (error) {
+        await client.query("ROLLBACK");
+
+        console.error(
+          "Error generando keys:",
+          error
+        );
+
+        res.status(500).json({
+          success: false,
+          message: "No se pudieron generar las keys"
+        });
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.error(error);
 
       res.status(500).json({
         success: false,
-        message:
-          "No se pudieron generar las keys"
+        message: "Error interno"
       });
-    } finally {
-      client.release();
     }
   }
 );
@@ -336,68 +308,57 @@ app.post(
 app.get(
   "/api/admin/keys",
   admin,
-  async (_req, res) => {
-    const { rows } =
-      await pool.query(`
-        SELECT
-          id,
-          type,
-          created_at,
-          expires_at,
-          used_by,
-          used_username,
-          used_at,
-          revoked
-        FROM keys
-        ORDER BY created_at DESC
-      `);
+  async function (req, res) {
+    try {
+      const result = await pool.query(
+        [
+          "SELECT",
+          "id,",
+          "type,",
+          "created_at,",
+          "expires_at,",
+          "used_by,",
+          "used_username,",
+          "used_at,",
+          "revoked",
+          "FROM keys",
+          "ORDER BY created_at DESC"
+        ].join(" ")
+      );
 
-    res.json({
-      success: true,
-
-      keys: rows.map(
-        (k) => ({
-          id: k.id,
-
-          type: k.type,
-
-          createdAt:
-            Number(
-              k.created_at
-            ),
-
-          expiresAt:
-            k.expires_at === null
-              ? null
-              : Number(
-                  k.expires_at
-                ),
-
-          usedBy:
-            k.used_by,
-
-          usedUsername:
-            k.used_username,
-
-          usedAt:
-            k.used_at === null
-              ? null
-              : Number(
-                  k.used_at
-                ),
-
-          revoked:
-            k.revoked,
-
-          expired:
-            !k.revoked &&
-            k.expires_at !== null &&
-            Number(
-              k.expires_at
-            ) <= Date.now()
+      res.json({
+        success: true,
+        keys: result.rows.map(function (k) {
+          return {
+            id: k.id,
+            type: k.type,
+            createdAt: Number(k.created_at),
+            expiresAt:
+              k.expires_at === null
+                ? null
+                : Number(k.expires_at),
+            usedBy: k.used_by,
+            usedUsername: k.used_username,
+            usedAt:
+              k.used_at === null
+                ? null
+                : Number(k.used_at),
+            revoked: k.revoked,
+            expired:
+              !k.revoked &&
+              k.expires_at !== null &&
+              Number(k.expires_at) <= Date.now()
+          };
         })
-      )
-    });
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        success: false,
+        message: "No se pudieron obtener las keys"
+      });
+    }
   }
 );
 
@@ -408,26 +369,31 @@ app.get(
 app.post(
   "/api/admin/keys/:id/revoke",
   admin,
-  async (req, res) => {
-    const result =
-      await pool.query(
-        `UPDATE keys
-         SET revoked = TRUE
-         WHERE id = $1`,
+  async function (req, res) {
+    try {
+      const result = await pool.query(
+        "UPDATE keys SET revoked=TRUE WHERE id=$1",
         [req.params.id]
       );
 
-    if (!result.rowCount) {
-      return res.status(404).json({
+      if (!result.rowCount) {
+        return res.status(404).json({
+          success: false,
+          message: "Key no encontrada"
+        });
+      }
+
+      res.json({
+        success: true
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
         success: false,
-        message:
-          "Key no encontrada"
+        message: "No se pudo revocar la key"
       });
     }
-
-    res.json({
-      success: true
-    });
   }
 );
 
@@ -438,325 +404,320 @@ app.post(
 app.delete(
   "/api/admin/keys/:id",
   admin,
-  async (req, res) => {
-    const result =
-      await pool.query(
-        `DELETE FROM keys
-         WHERE id = $1`,
+  async function (req, res) {
+    try {
+      const result = await pool.query(
+        "DELETE FROM keys WHERE id=$1",
         [req.params.id]
       );
 
-    if (!result.rowCount) {
-      return res.status(404).json({
+      if (!result.rowCount) {
+        return res.status(404).json({
+          success: false,
+          message: "Key no encontrada"
+        });
+      }
+
+      res.json({
+        success: true
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
         success: false,
-        message:
-          "Key no encontrada"
+        message: "No se pudo eliminar la key"
       });
     }
-
-    res.json({
-      success: true
-    });
   }
 );
 
 // ============================================================
 // VALIDAR KEY
-//
-// REQUIERE:
-// 1. Usuario en WHITELIST
-// 2. Key válida
+// ============================================================
+// IMPORTANTE:
+// Una key válida SIEMPRE necesita whitelist.
 // ============================================================
 
 app.post(
   "/api/keys/validate",
-  async (req, res) => {
+  async function (req, res) {
+    try {
+      const code = String(
+        req.body?.code || ""
+      ).trim();
 
-    const code = String(
-      req.body?.code || ""
-    ).trim();
+      const userId = String(
+        req.body?.userId || ""
+      ).trim();
 
-    const userId = String(
-      req.body?.userId || ""
-    );
+      const username = String(
+        req.body?.username || userId
+      ).trim();
 
-    const username = String(
-      req.body?.username ||
-        userId
-    );
+      if (!code) {
+        return res.json({
+          valid: false,
+          permanent: false,
+          message: "Key vacía"
+        });
+      }
 
-    // --------------------------------------------------------
-    // COMPROBAR USER ID
-    // --------------------------------------------------------
+      if (!userId) {
+        return res.json({
+          valid: false,
+          permanent: false,
+          message: "Usuario de Roblox requerido"
+        });
+      }
 
-    if (!userId) {
-      return res.status(400).json({
-        valid: false,
-        permanent: false,
-        message:
-          "Roblox User ID requerido"
-      });
-    }
+      // --------------------------------------------------------
+      // PRIMERO: comprobar whitelist
+      // --------------------------------------------------------
 
-    // --------------------------------------------------------
-    // COMPROBAR WHITELIST
-    // --------------------------------------------------------
-
-    const whitelistResult =
-      await pool.query(
-        `SELECT
-           roblox_user_id,
-           roblox_username
-         FROM whitelist
-         WHERE roblox_user_id = $1
-         LIMIT 1`,
+      const whitelistResult = await pool.query(
+        [
+          "SELECT roblox_user_id, roblox_username",
+          "FROM whitelist",
+          "WHERE roblox_user_id=$1"
+        ].join(" "),
         [userId]
       );
 
-    if (
-      !whitelistResult.rows.length
-    ) {
-      return res.json({
-        valid: false,
-        permanent: false,
-        whitelisted: false,
+      if (!whitelistResult.rows.length) {
+        return res.json({
+          valid: false,
+          permanent: false,
+          whitelisted: false,
+          message:
+            "NO TE ENCUENTRAS EN WHITELIST CONTACTATE CON EL VENDEDOR EH ADMIN PARA PODER ACCEDER"
+        });
+      }
 
-        message:
-          "NO TE ENCUENTRAS EN WHITELIST CONTACTATE CON EL VENDEDOR EH ADMIN PARA PODER ACCEDER"
-      });
-    }
+      // --------------------------------------------------------
+      // SEGUNDO: comprobar key
+      // --------------------------------------------------------
 
-    // --------------------------------------------------------
-    // COMPROBAR KEY VACÍA
-    // --------------------------------------------------------
-
-    if (!code) {
-      return res.json({
-        valid: false,
-        permanent: false,
-        whitelisted: true,
-
-        message:
-          "Key vacía"
-      });
-    }
-
-    // --------------------------------------------------------
-    // BUSCAR KEY
-    // --------------------------------------------------------
-
-    const { rows } =
-      await pool.query(
-        `SELECT *
-         FROM keys
-         WHERE key_hash = $1
-         LIMIT 1`,
+      const keyResult = await pool.query(
+        [
+          "SELECT * FROM keys",
+          "WHERE key_hash=$1",
+          "LIMIT 1"
+        ].join(" "),
         [hashKey(code)]
       );
 
-    if (!rows.length) {
-      return res.json({
-        valid: false,
-        permanent: false,
+      if (!keyResult.rows.length) {
+        return res.json({
+          valid: false,
+          permanent: false,
+          whitelisted: true,
+          message: "Key inválida"
+        });
+      }
+
+      const k = keyResult.rows[0];
+
+      // --------------------------------------------------------
+      // KEY REVOCADA
+      // --------------------------------------------------------
+
+      if (k.revoked) {
+        return res.json({
+          valid: false,
+          permanent: false,
+          whitelisted: true,
+          message: "Key revocada"
+        });
+      }
+
+      // --------------------------------------------------------
+      // KEY EXPIRADA
+      // --------------------------------------------------------
+
+      if (
+        k.expires_at !== null &&
+        Number(k.expires_at) <= Date.now()
+      ) {
+        return res.json({
+          valid: false,
+          permanent: false,
+          whitelisted: true,
+          message: "Key expirada"
+        });
+      }
+
+      // --------------------------------------------------------
+      // KEY YA VINCULADA A OTRO USUARIO
+      // --------------------------------------------------------
+
+      if (
+        k.used_by &&
+        String(k.used_by) !== userId
+      ) {
+        return res.json({
+          valid: false,
+          permanent: false,
+          whitelisted: true,
+          message:
+            "Esta key ya está vinculada a otro usuario"
+        });
+      }
+
+      // --------------------------------------------------------
+      // VINCULAR KEY AL USUARIO
+      // --------------------------------------------------------
+
+      if (!k.used_by) {
+        await pool.query(
+          [
+            "UPDATE keys",
+            "SET used_by=$1,",
+            "used_username=$2,",
+            "used_at=$3",
+            "WHERE id=$4"
+          ].join(" "),
+          [
+            userId,
+            username,
+            Date.now(),
+            k.id
+          ]
+        );
+      }
+
+      // --------------------------------------------------------
+      // KEY CORRECTA
+      // --------------------------------------------------------
+
+      res.json({
+        valid: true,
+        permanent:
+          k.type === "permanent",
         whitelisted: true,
-
-        message:
-          "Key inválida"
+        message: "Key válida",
+        expiresAt:
+          k.expires_at === null
+            ? null
+            : Number(k.expires_at)
       });
-    }
-
-    const k = rows[0];
-
-    // --------------------------------------------------------
-    // KEY REVOCADA
-    // --------------------------------------------------------
-
-    if (k.revoked) {
-      return res.json({
-        valid: false,
-        permanent: false,
-        whitelisted: true,
-
-        message:
-          "Key revocada"
-      });
-    }
-
-    // --------------------------------------------------------
-    // KEY EXPIRADA
-    // --------------------------------------------------------
-
-    if (
-      k.expires_at !== null &&
-      Number(
-        k.expires_at
-      ) <= Date.now()
-    ) {
-      return res.json({
-        valid: false,
-        permanent: false,
-        whitelisted: true,
-
-        message:
-          "Key expirada"
-      });
-    }
-
-    // --------------------------------------------------------
-    // KEY YA VINCULADA A OTRO USUARIO
-    // --------------------------------------------------------
-
-    if (
-      k.used_by &&
-      String(k.used_by) !== userId
-    ) {
-      return res.json({
-        valid: false,
-        permanent: false,
-        whitelisted: true,
-
-        message:
-          "Esta key ya está vinculada a otro usuario"
-      });
-    }
-
-    // --------------------------------------------------------
-    // VINCULAR KEY AL USUARIO
-    // --------------------------------------------------------
-
-    if (!k.used_by) {
-      await pool.query(
-        `UPDATE keys
-         SET
-           used_by = $1,
-           used_username = $2,
-           used_at = $3
-         WHERE id = $4`,
-        [
-          userId,
-          username,
-          Date.now(),
-          k.id
-        ]
+    } catch (error) {
+      console.error(
+        "Error validando key:",
+        error
       );
+
+      res.status(500).json({
+        valid: false,
+        permanent: false,
+        message: "Error interno del servidor"
+      });
     }
-
-    // --------------------------------------------------------
-    // ACCESO CONCEDIDO
-    // --------------------------------------------------------
-
-    res.json({
-      valid: true,
-
-      whitelisted: true,
-
-      permanent:
-        k.type === "permanent",
-
-      message:
-        "Key válida",
-
-      expiresAt:
-        k.expires_at === null
-          ? null
-          : Number(
-              k.expires_at
-            )
-    });
   }
 );
 
 // ============================================================
-// WHITELIST - COMPROBAR
+// WHITELIST CHECK
 // ============================================================
 
 app.post(
   "/api/whitelist/check",
-  async (req, res) => {
+  async function (req, res) {
+    try {
+      const robloxUserId = String(
+        req.body?.robloxUserId || ""
+      ).trim();
 
-    const robloxUserId =
-      String(
-        req.body?.robloxUserId ||
-          ""
-      );
+      if (!robloxUserId) {
+        return res.json({
+          whitelisted: false,
+          username: null
+        });
+      }
 
-    const { rows } =
-      await pool.query(
-        `SELECT
-           roblox_user_id,
-           roblox_username
-         FROM whitelist
-         WHERE roblox_user_id = $1`,
+      const result = await pool.query(
+        [
+          "SELECT roblox_user_id, roblox_username",
+          "FROM whitelist",
+          "WHERE roblox_user_id=$1"
+        ].join(" "),
         [robloxUserId]
       );
 
-    res.json({
-      whitelisted:
-        rows.length > 0,
+      res.json({
+        whitelisted:
+          result.rows.length > 0,
 
-      username:
-        rows[0]
-          ?.roblox_username ||
-        null
-    });
+        username:
+          result.rows[0]?.roblox_username ||
+          null
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        whitelisted: false,
+        username: null
+      });
+    }
   }
 );
 
 // ============================================================
-// WHITELIST - AGREGAR
+// AGREGAR A WHITELIST
 // ============================================================
 
 app.post(
   "/api/whitelist",
-  async (req, res) => {
+  async function (req, res) {
+    try {
+      const id = String(
+        req.body?.robloxUserId || ""
+      ).trim();
 
-    const id = String(
-      req.body?.robloxUserId ||
-        ""
-    );
+      const username = String(
+        req.body?.robloxUsername || id
+      ).trim();
 
-    const username =
-      String(
-        req.body?.robloxUsername ||
-          id
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          message: "User ID requerido"
+        });
+      }
+
+      await pool.query(
+        [
+          "INSERT INTO whitelist",
+          "(roblox_user_id, roblox_username, created_at)",
+          "VALUES ($1, $2, $3)",
+          "ON CONFLICT (roblox_user_id)",
+          "DO UPDATE SET",
+          "roblox_username=EXCLUDED.roblox_username"
+        ].join(" "),
+        [
+          id,
+          username,
+          Date.now()
+        ]
       );
 
-    if (!id) {
-      return res.status(400).json({
+      res.json({
+        success: true,
+        message:
+          "✓ " +
+          username +
+          " agregado a la whitelist"
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
         success: false,
         message:
-          "User ID requerido"
+          "No se pudo agregar a la whitelist"
       });
     }
-
-    await pool.query(
-      `INSERT INTO whitelist
-       (
-         roblox_user_id,
-         roblox_username,
-         created_at
-       )
-       VALUES ($1,$2,$3)
-
-       ON CONFLICT
-       (roblox_user_id)
-
-       DO UPDATE SET
-         roblox_username =
-         EXCLUDED.roblox_username`,
-      [
-        id,
-        username,
-        Date.now()
-      ]
-    );
-
-    res.json({
-      success: true,
-
-      message:
-        `✓ ${username} agregado a la whitelist`
-    });
   }
 );
 
@@ -766,34 +727,42 @@ app.post(
 
 app.get(
   "/api/whitelist",
-  async (_req, res) => {
+  async function (req, res) {
+    try {
+      const result = await pool.query(
+        [
+          "SELECT",
+          "roblox_user_id,",
+          "roblox_username,",
+          "created_at",
+          "FROM whitelist",
+          "ORDER BY created_at DESC"
+        ].join(" ")
+      );
 
-    const { rows } =
-      await pool.query(`
-        SELECT
-          roblox_user_id,
-          roblox_username,
-          created_at
-        FROM whitelist
-        ORDER BY created_at DESC
-      `);
+      res.json(
+        result.rows.map(function (x) {
+          return {
+            robloxUserId:
+              x.roblox_user_id,
 
-    res.json(
-      rows.map(
-        (x) => ({
-          robloxUserId:
-            x.roblox_user_id,
+            robloxUsername:
+              x.roblox_username,
 
-          robloxUsername:
-            x.roblox_username,
-
-          createdAt:
-            Number(
-              x.created_at
-            )
+            createdAt:
+              Number(x.created_at)
+          };
         })
-      )
-    );
+      );
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        success: false,
+        message:
+          "No se pudo obtener la whitelist"
+      });
+    }
   }
 );
 
@@ -804,107 +773,107 @@ app.get(
 app.delete(
   "/api/admin/whitelist/:userId",
   admin,
-  async (req, res) => {
-
-    const result =
-      await pool.query(
-        `DELETE FROM whitelist
-         WHERE roblox_user_id = $1`,
-        [
-          String(
-            req.params.userId
-          )
-        ]
+  async function (req, res) {
+    try {
+      const result = await pool.query(
+        "DELETE FROM whitelist WHERE roblox_user_id=$1",
+        [String(req.params.userId)]
       );
 
-    if (!result.rowCount) {
-      return res.status(404).json({
+      if (!result.rowCount) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Usuario no encontrado"
+        });
+      }
+
+      res.json({
+        success: true
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
         success: false,
         message:
-          "Usuario no encontrado"
+          "No se pudo eliminar el usuario"
       });
     }
-
-    res.json({
-      success: true
-    });
   }
 );
 
 // ============================================================
-// ESTADÍSTICAS
+// STATS
 // ============================================================
 
 app.get(
   "/api/admin/stats",
   admin,
-  async (_req, res) => {
+  async function (req, res) {
+    try {
+      const keysResult = await pool.query(
+        "SELECT COUNT(*)::int AS count FROM keys"
+      );
 
-    const keys =
-      await pool.query(`
-        SELECT
-          COUNT(*)::int AS count
-        FROM keys
-      `);
-
-    const active =
-      await pool.query(
-        `SELECT
-           COUNT(*)::int AS count
-         FROM keys
-         WHERE revoked = FALSE
-         AND (
-           expires_at IS NULL
-           OR expires_at > $1
-         )`,
+      const activeResult = await pool.query(
+        [
+          "SELECT COUNT(*)::int AS count",
+          "FROM keys",
+          "WHERE revoked=FALSE",
+          "AND (expires_at IS NULL OR expires_at > $1)"
+        ].join(" "),
         [Date.now()]
       );
 
-    const revoked =
-      await pool.query(`
-        SELECT
-          COUNT(*)::int AS count
-        FROM keys
-        WHERE revoked = TRUE
-      `);
+      const revokedResult = await pool.query(
+        [
+          "SELECT COUNT(*)::int AS count",
+          "FROM keys",
+          "WHERE revoked=TRUE"
+        ].join(" ")
+      );
 
-    const whitelist =
-      await pool.query(`
-        SELECT
-          COUNT(*)::int AS count
-        FROM whitelist
-      `);
+      const whitelistResult = await pool.query(
+        "SELECT COUNT(*)::int AS count FROM whitelist"
+      );
 
-    res.json({
-      success: true,
+      res.json({
+        success: true,
 
-      totalKeys:
-        keys.rows[0].count,
+        totalKeys:
+          keysResult.rows[0].count,
 
-      activeKeys:
-        active.rows[0].count,
+        activeKeys:
+          activeResult.rows[0].count,
 
-      revokedKeys:
-        revoked.rows[0].count,
+        revokedKeys:
+          revokedResult.rows[0].count,
 
-      whitelistUsers:
-        whitelist.rows[0].count
-    });
+        whitelistUsers:
+          whitelistResult.rows[0].count
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        success: false,
+        message: "Error obteniendo estadísticas"
+      });
+    }
   }
 );
 
 // ============================================================
 // FRONTEND
-//
-// IMPORTANTE:
-// No usar app.get("*") porque causa el error
-// "Missing parameter name at index 1: *"
 // ============================================================
 
-app.get(
-  "/{*splat}",
-  (_req, res) => {
-    res.sendFile(
+app.use(function (req, res, next) {
+  if (
+    req.method === "GET" &&
+    !req.path.startsWith("/api/")
+  ) {
+    return res.sendFile(
       path.join(
         __dirname,
         "public",
@@ -912,27 +881,35 @@ app.get(
       )
     );
   }
-);
+
+  next();
+});
 
 // ============================================================
-// INICIAR SERVIDOR
+// START SERVER
 // ============================================================
 
 initDB()
-  .then(() => {
+  .then(function () {
     app.listen(
       PORT,
-      () => {
+      "0.0.0.0",
+      function () {
         console.log(
-          `API escuchando en ${PORT}`
+          "API escuchando en puerto " +
+          PORT
+        );
+
+        console.log(
+          "Whitelist obligatoria: ACTIVADA"
         );
       }
     );
   })
-  .catch((err) => {
+  .catch(function (error) {
     console.error(
       "No se pudo inicializar la DB:",
-      err
+      error
     );
 
     process.exit(1);
