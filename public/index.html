@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#07152b">
+<title>X23 • Control Center</title>
+<style>
+:root{
+  --bg:#050b17;--panel:#0b1426;--panel2:#0e1b31;--line:#193253;
+  --text:#edf6ff;--muted:#7f97b5;--blue:#168cff;--cyan:#55d9ff;
+  --green:#37e0a1;--red:#ff5878;--yellow:#ffc857;--shadow:0 18px 60px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:radial-gradient(circle at 15% 0%,#0d2a4e 0,#050b17 38%,#030711 100%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+button,input,select{font:inherit}button{cursor:pointer}.hidden{display:none!important}
+.login{min-height:100vh;display:grid;place-items:center;padding:24px;position:relative;overflow:hidden}
+.login:before,.login:after{content:"";position:absolute;border-radius:50%;filter:blur(2px);opacity:.35;pointer-events:none}
+.login:before{width:460px;height:460px;background:#087dff;top:-230px;left:-120px}.login:after{width:420px;height:420px;background:#22d3ee;bottom:-260px;right:-120px}
+.login-card{width:min(430px,100%);position:relative;z-index:1;background:rgba(8,18,34,.86);border:1px solid #1b4168;border-radius:26px;padding:34px;box-shadow:var(--shadow);backdrop-filter:blur(18px)}
+.brand-lock{display:flex;align-items:center;gap:14px;margin-bottom:28px}.logo{width:58px;height:58px;border-radius:18px;display:grid;place-items:center;background:linear-gradient(145deg,#0c74ff,#38d9ff);box-shadow:0 0 35px rgba(32,163,255,.35);overflow:hidden;position:relative}.logo svg{width:46px;height:46px}.brand-lock h1{font-size:21px;margin:0}.brand-lock p{margin:4px 0 0;color:var(--muted);font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+.label{display:block;color:#9cb4d1;font-size:12px;font-weight:700;margin:0 0 7px}.input,.select{width:100%;background:#061020;color:var(--text);border:1px solid #1c3859;border-radius:12px;padding:12px 13px;outline:none;transition:.2s}.input:focus,.select:focus{border-color:#249eff;box-shadow:0 0 0 3px rgba(36,158,255,.12)}
+.primary{background:linear-gradient(135deg,#087bff,#22c8f4);color:white;border:0;border-radius:11px;padding:11px 15px;font-weight:800;box-shadow:0 8px 24px rgba(11,143,255,.2)}.primary:hover{filter:brightness(1.08);transform:translateY(-1px)}.ghost{background:#0b1729;color:#b8cbe0;border:1px solid #1a3656;border-radius:10px;padding:10px 13px}.danger{background:#351526;color:#ff9caf;border:1px solid #5b243a;border-radius:9px;padding:8px 11px}.success{background:#0d3028;color:#67edbb;border:1px solid #185847;border-radius:9px;padding:8px 11px}.full{width:100%}.msg{min-height:20px;color:#ff8198;font-size:13px;margin-top:10px}.login-note{color:#69819d;font-size:11px;margin-top:18px;text-align:center}
+.app{min-height:100vh;display:flex}.side{width:254px;flex:0 0 254px;background:rgba(5,13,27,.84);border-right:1px solid #142d49;padding:20px 15px;position:sticky;top:0;height:100vh;backdrop-filter:blur(16px);z-index:5}.brand{display:flex;align-items:center;gap:11px;padding:7px 9px 25px}.brand .logo{width:42px;height:42px;border-radius:13px}.brand .logo svg{width:33px;height:33px}.brand-name{font-weight:900;letter-spacing:-.02em}.brand-name span{display:block;color:#55d9ff;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-top:2px}
+.nav-title{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:#52708f;font-weight:800;padding:7px 11px}.nav button{width:100%;display:flex;align-items:center;gap:11px;border:1px solid transparent;background:transparent;color:#8fa7c0;border-radius:11px;padding:11px 12px;margin:4px 0;text-align:left;font-weight:700}.nav button:hover{background:#0b1a2f;color:#dceeff}.nav button.active{background:linear-gradient(90deg,rgba(19,137,255,.18),rgba(36,213,255,.06));border-color:#16446d;color:white}.nav-icon{width:20px;text-align:center;color:#55d9ff}.side-bottom{position:absolute;left:15px;right:15px;bottom:16px;border-top:1px solid #142d49;padding-top:13px}.api-mini{display:flex;align-items:center;gap:8px;color:#89a0b8;font-size:11px}.dot{width:8px;height:8px;border-radius:50%;background:#64748b}.dot.on{background:var(--green);box-shadow:0 0 12px rgba(55,224,161,.7)}.dot.off{background:var(--red);box-shadow:0 0 12px rgba(255,88,120,.6)}
+.main{min-width:0;flex:1;padding:27px;max-width:1500px;margin:auto;width:100%}.top{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:25px}.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:#4e7ba5;font-weight:800}.top h1{font-size:28px;margin:3px 0 0;letter-spacing:-.04em}.top-actions{display:flex;align-items:center;gap:9px}.status-pill{display:flex;align-items:center;gap:7px;background:#091628;border:1px solid #173452;padding:8px 11px;border-radius:999px;color:#a9bfd5;font-size:12px;font-weight:700}
+.page{display:none}.page.active{display:block}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.card{background:linear-gradient(145deg,rgba(12,25,45,.94),rgba(7,16,30,.94));border:1px solid #163451;border-radius:17px;padding:18px;box-shadow:0 10px 30px rgba(0,0,0,.14)}.card-top{display:flex;justify-content:space-between;align-items:center}.muted{color:var(--muted);font-size:12px}.stat{font-size:29px;font-weight:900;margin-top:10px;letter-spacing:-.04em}.stat.blue{color:#55d9ff}.stat.green{color:#59e8b6}.stat.red{color:#ff718b}.stat.yellow{color:#ffd166}.stat-icon{width:35px;height:35px;display:grid;place-items:center;border-radius:10px;background:#0b2139;color:#55d9ff}
+.panel{background:rgba(9,20,37,.9);border:1px solid #163451;border-radius:17px;padding:19px;margin-top:17px;box-shadow:0 10px 30px rgba(0,0,0,.12)}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.panel h2{font-size:16px;margin:0}.panel p{margin:5px 0 0}.row{display:flex;gap:9px;flex-wrap:wrap}.row .input,.row .select{width:auto;min-width:145px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;margin-top:5px;min-width:720px}th,td{text-align:left;padding:12px 9px;border-bottom:1px solid #142d48;font-size:12px;vertical-align:middle}th{color:#617c99;text-transform:uppercase;letter-spacing:.08em;font-size:10px}tbody tr:hover{background:rgba(24,80,128,.08)}.badge{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:999px;font-size:10px;font-weight:800;border:1px solid #25435f;background:#0d1b2e;color:#9eb5cd}.badge.ok{background:#092d25;color:#64e6b5;border-color:#145d4c}.badge.expired,.badge.revoked{background:#321622;color:#ff8fa2;border-color:#5c2639}.badge.warn{background:#30240d;color:#ffd36e;border-color:#5e4816}
+.generated{display:grid;gap:8px;margin-top:14px}.keyout{background:#061020;border:1px solid #1a3b5d;padding:12px;border-radius:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;color:#8ce7ff;display:flex;justify-content:space-between;gap:12px;align-items:center}.copy{background:#0b2138;border:1px solid #19446b;color:#91c5e7;border-radius:8px;padding:7px 9px;font-size:11px}
+.hero{margin-top:17px;background:linear-gradient(120deg,rgba(10,74,126,.32),rgba(10,25,46,.82));border:1px solid #19517b;border-radius:18px;padding:21px;display:flex;align-items:center;justify-content:space-between;gap:20px;overflow:hidden;position:relative}.hero:after{content:"";position:absolute;width:280px;height:280px;border-radius:50%;background:#08bdfd;opacity:.06;right:-90px;top:-110px}.hero h2{margin:0;font-size:20px}.hero p{margin:6px 0 0;color:#8da9c5;font-size:12px}.hero-actions{display:flex;gap:9px;position:relative;z-index:1}
+.control{display:flex;align-items:center;justify-content:space-between;gap:20px}.control-left{display:flex;align-items:center;gap:14px}.big-dot{width:14px;height:14px;border-radius:50%}.big-dot.on{background:var(--green);box-shadow:0 0 20px rgba(55,224,161,.65)}.big-dot.off{background:var(--red);box-shadow:0 0 20px rgba(255,88,120,.5)}.control h3{margin:0;font-size:16px}.control p{margin:4px 0 0}.switch{position:relative;width:52px;height:29px}.switch input{opacity:0;width:0;height:0}.slider{position:absolute;inset:0;border-radius:30px;background:#18283d;border:1px solid #294461;transition:.2s}.slider:before{content:"";position:absolute;width:21px;height:21px;left:3px;top:3px;border-radius:50%;background:#8ba1b7;transition:.2s}.switch input:checked+.slider{background:#0b6f58;border-color:#19a67e}.switch input:checked+.slider:before{transform:translateX(23px);background:#6cf0c0}
+.empty{text-align:center;padding:28px;color:#607c99;font-size:12px}.toolbar{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}.pagination-note{font-size:11px;color:#5f7893}.log-success{color:#5fe4b4}.log-fail{color:#ff8298}.key-id{font-family:ui-monospace,monospace;color:#6384a4;font-size:10px}.user-name{font-weight:800}.user-id{font-family:ui-monospace,monospace;color:#5f7e9d;font-size:10px}
+.toast-wrap{position:fixed;right:20px;bottom:20px;z-index:100;display:grid;gap:9px}.toast{background:#0b1b30;border:1px solid #21486b;border-radius:12px;padding:12px 14px;box-shadow:var(--shadow);font-size:12px;min-width:250px}.toast.good{border-color:#1b604d}.toast.bad{border-color:#652b3d}
+@media(max-width:1050px){.grid{grid-template-columns:repeat(2,1fr)}.side{width:220px;flex-basis:220px}}
+@media(max-width:720px){.app{display:block}.side{position:relative;width:100%;height:auto;min-height:0;padding:12px;border-right:0;border-bottom:1px solid #142d49}.brand{padding-bottom:12px}.side-bottom{display:none}.nav{display:flex;overflow:auto;gap:5px}.nav-title{display:none}.nav button{white-space:nowrap;width:auto;margin:0}.main{padding:16px}.top h1{font-size:22px}.status-pill{display:none}.grid{grid-template-columns:1fr 1fr}.hero{display:block}.hero-actions{margin-top:15px}.row .input,.row .select{width:100%}.keyout{display:block}.copy{margin-top:8px}}
+@media(max-width:430px){.grid{grid-template-columns:1fr}.login-card{padding:25px}}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute"><defs>
+  <linearGradient id="dragonBlue" x1="0" x2="1"><stop stop-color="#31cfff"/><stop offset="1" stop-color="#0b72ff"/></linearGradient>
+</defs></svg>
+
+<div id="login" class="login">
+  <div class="login-card">
+    <div class="brand-lock">
+      <div class="logo" aria-label="Charizard X">
+        <svg viewBox="0 0 64 64" fill="none">
+          <path d="M17 48c7-3 8-10 5-16 8 3 12 8 13 15 3-8 9-13 17-15-3 7-1 13 5 16-8 1-14 0-19-4-5 4-11 5-21 4Z" fill="url(#dragonBlue)"/>
+          <path d="M20 22c5-8 12-10 20-7l9-7-2 10c6 3 9 7 10 13-7-4-14-4-20 0-5-4-10-5-17-4l6-6-6 1Z" fill="#e9f7ff"/>
+          <path d="M34 22l8 8 7-7M32 28l-8 8" stroke="#0a4fa6" stroke-width="4" stroke-linecap="round"/>
+          <path d="M47 13l8 4-8 4" stroke="#ff9d2e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div><h1>X23 Control Center</h1><p>Charizard X • Key Management</p></div>
+    </div>
+    <label class="label" for="password">Contraseña de administrador</label>
+    <input id="password" class="input" type="password" autocomplete="current-password" placeholder="••••••••••">
+    <button id="loginBtn" class="primary full" style="margin-top:12px" onclick="login()">Iniciar sesión</button>
+    <div id="loginMsg" class="msg"></div>
+    <div class="login-note">Sesión segura y persistente • No se reinicia al hacer deploy</div>
+  </div>
+</div>
+
+<div id="app" class="app hidden">
+  <aside class="side">
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 64 64" fill="none">
+          <path d="M17 48c7-3 8-10 5-16 8 3 12 8 13 15 3-8 9-13 17-15-3 7-1 13-5 16-8 1-14 0-19-4-5 4-11 5-21 4Z" fill="url(#dragonBlue)"/>
+          <path d="M20 22c5-8 12-10 20-7l9-7-2 10c6 3 9 7 10 13-7-4-14-4-20 0-5-4-10-5-17-4l6-6-6 1Z" fill="#e9f7ff"/>
+          <path d="M34 22l8 8 7-7M32 28l-8 8" stroke="#0a4fa6" stroke-width="4" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="brand-name">X23 <span>Control Center</span></div>
+    </div>
+    <div class="nav-title">Administración</div>
+    <div class="nav">
+      <button class="active" data-page="dashboard"><span class="nav-icon">▦</span> Dashboard</button>
+      <button data-page="keys"><span class="nav-icon">⌁</span> Keys</button>
+      <button data-page="users"><span class="nav-icon">♙</span> Usuarios</button>
+      <button data-page="api"><span class="nav-icon">◉</span> API Control</button>
+    </div>
+    <div class="side-bottom"><div class="api-mini"><span id="sideDot" class="dot"></span><span id="sideApiText">Comprobando API…</span></div></div>
+  </aside>
+
+  <main class="main">
+    <div class="top">
+      <div><div class="eyebrow">Administration / X23</div><h1 id="title">Dashboard</h1></div>
+      <div class="top-actions">
+        <div class="status-pill"><span id="topDot" class="dot"></span><span id="topApiText">API…</span></div>
+        <button class="ghost" onclick="refreshAll()">↻ Actualizar</button>
+        <button class="ghost" onclick="logout()">Salir</button>
+      </div>
+    </div>
+
+    <section id="dashboard" class="page active">
+      <div class="grid">
+        <div class="card"><div class="card-top"><div class="muted">Total keys</div><div class="stat-icon">⌁</div></div><div id="totalKeys" class="stat blue">0</div></div>
+        <div class="card"><div class="card-top"><div class="muted">Keys activas</div><div class="stat-icon">✓</div></div><div id="activeKeys" class="stat green">0</div></div>
+        <div class="card"><div class="card-top"><div class="muted">Revocadas</div><div class="stat-icon">!</div></div><div id="revokedKeys" class="stat red">0</div></div>
+        <div class="card"><div class="card-top"><div class="muted">Usuarios</div><div class="stat-icon">♙</div></div><div id="whiteUsers" class="stat yellow">0</div></div>
+      </div>
+      <div class="hero">
+        <div><h2>Control central de tu API</h2><p>Gestiona keys, usuarios, historial y disponibilidad del servicio desde un solo panel.</p></div>
+        <div class="hero-actions"><button class="primary" onclick="go('keys')">Gestionar keys</button><button class="ghost" onclick="go('api')">Ver API</button></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div><h2>Actividad reciente</h2><p class="muted">Últimas acciones registradas.</p></div><button class="ghost" onclick="go('users')">Ver historial</button></div>
+        <div class="table-wrap"><table><thead><tr><th>Acción</th><th>Usuario</th><th>Resultado</th><th>Fecha</th></tr></thead><tbody id="recentBody"></tbody></table></div>
+      </div>
+    </section>
+
+    <section id="keys" class="page">
+      <div class="panel">
+        <div class="panel-head"><div><h2>Generar nuevas keys</h2><p class="muted">El tiempo se fija al crear la key y no se reinicia al validarla.</p></div></div>
+        <div class="row">
+          <input id="amount" class="input" type="number" min="1" max="100" value="1" aria-label="Cantidad">
+          <select id="duration" class="select" aria-label="Duración"><option value="minutes">Minutos</option><option value="hours" selected>Horas</option><option value="days">Días</option><option value="weeks">Semanas</option><option value="months">30 días</option><option value="permanent">Permanente</option></select>
+          <button class="primary" onclick="generateKeys()">＋ Generar keys</button>
+        </div>
+        <div id="generated" class="generated"></div>
+      </div>
+      <div class="panel">
+        <div class="toolbar"><div><h2>Gestión de keys</h2><p class="muted">Extiende, activa o revoca sin perder el historial.</p></div><input id="keySearch" class="input" style="max-width:300px" placeholder="Buscar usuario o tipo…" oninput="renderKeys()"></div>
+        <div class="table-wrap"><table><thead><tr><th>Tipo</th><th>Usuario</th><th>Creada</th><th>Expira</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="keysBody"></tbody></table></div>
+      </div>
+    </section>
+
+    <section id="users" class="page">
+      <div class="panel">
+        <div class="panel-head"><div><h2>Usuarios</h2><p class="muted">Usuarios administrados por el panel.</p></div></div>
+        <div class="row">
+          <input id="wlId" class="input" placeholder="Roblox User ID">
+          <input id="wlName" class="input" placeholder="Username">
+          <button class="primary" onclick="addWhitelist()">＋ Agregar usuario</button>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>User ID</th><th>Username</th><th>Fecha</th><th>Acciones</th></tr></thead><tbody id="wlBody"></tbody></table></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div><h2>Historial de keys</h2><p class="muted">Aquí quedan registradas validaciones, extensiones, activaciones, revocaciones y cambios de API.</p></div><button class="ghost" onclick="loadLogs()">↻ Actualizar</button></div>
+        <div class="table-wrap"><table><thead><tr><th>Acción</th><th>Usuario</th><th>Key ID</th><th>Resultado</th><th>Mensaje</th><th>Fecha</th></tr></thead><tbody id="logsBody"></tbody></table></div>
+      </div>
+    </section>
+
+    <section id="api" class="page">
+      <div class="panel">
+        <div class="panel-head"><div><h2>Estado de la API</h2><p class="muted">Puedes bloquear temporalmente las validaciones sin apagar el dashboard.</p></div><span id="apiBadge" class="badge">Comprobando…</span></div>
+        <div class="control">
+          <div class="control-left"><span id="bigDot" class="big-dot"></span><div><h3 id="apiTitle">Comprobando…</h3><p id="apiDescription" class="muted">Consultando estado actual.</p></div></div>
+          <label class="switch"><input id="apiToggle" type="checkbox" onchange="toggleApi(this.checked)"><span class="slider"></span></label>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Qué ocurre al desactivar</h2>
+        <p class="muted" style="line-height:1.7">El panel administrativo continúa disponible para que puedas volver a activarla. Las solicitudes de validación de keys reciben un estado temporal de API desactivada. El estado queda guardado en PostgreSQL, así que un reinicio/deploy no lo cambia.</p>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="toastWrap" class="toast-wrap"></div>
+
+<script>
+let token=localStorage.getItem("x23_admin_token")||"",keys=[],whitelist=[],logs=[],apiEnabled=true,loading=false;
+const $=id=>document.getElementById(id);
+const date=ms=>ms?new Date(ms).toLocaleString("es-MX",{dateStyle:"short",timeStyle:"short"}):"Permanente";
+const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
+function toast(message,good=true){const x=document.createElement("div");x.className="toast "+(good?"good":"bad");x.textContent=message;$("toastWrap").appendChild(x);setTimeout(()=>x.remove(),3200)}
+function setApiVisual(enabled){apiEnabled=!!enabled;["sideDot","topDot","bigDot"].forEach(id=>{const e=$(id);if(e)e.className=(id==="bigDot"?"big-dot ":"dot ")+(apiEnabled?"on":"off")});$("sideApiText").textContent=apiEnabled?"API operativa":"API desactivada";$("topApiText").textContent=apiEnabled?"API ONLINE":"API OFFLINE";$("apiBadge").className="badge "+(apiEnabled?"ok":"revoked");$("apiBadge").textContent=apiEnabled?"ONLINE":"OFFLINE";$("apiTitle").textContent=apiEnabled?"API activa":"API desactivada";$("apiDescription").textContent=apiEnabled?"Las validaciones de keys están habilitadas.":"Las validaciones están bloqueadas temporalmente.";if($("apiToggle"))$("apiToggle").checked=apiEnabled}
+async function api(url,options={}){options.headers={...(options.headers||{}),"Content-Type":"application/json","x-admin-token":token};const r=await fetch(url,options);const d=await r.json().catch(()=>({}));if(r.status===401){forceLogin("Tu sesión ya no es válida. Inicia sesión nuevamente.");throw new Error("UNAUTHORIZED")}if(!r.ok)throw new Error(d.message||"Error de servidor");return d}
+function forceLogin(msg=""){token="";localStorage.removeItem("x23_admin_token");$("app").classList.add("hidden");$("login").classList.remove("hidden");$("loginMsg").textContent=msg}
+async function login(){const btn=$("loginBtn");btn.disabled=true;btn.textContent="Verificando…";$("loginMsg").textContent="";try{const r=await fetch("/api/admin/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:$("password").value})});const d=await r.json();if(!r.ok)throw new Error(d.message||"No autorizado");token=d.token;localStorage.setItem("x23_admin_token",token);$("password").value="";showApp();await refreshAll();toast("Sesión iniciada correctamente")}catch(e){$("loginMsg").textContent=e.message}finally{btn.disabled=false;btn.textContent="Iniciar sesión"}}
+function showApp(){$("login").classList.add("hidden");$("app").classList.remove("hidden")}
+async function logout(){try{await api("/api/admin/logout",{method:"POST"})}catch{}forceLogin();$("password").value="";toast("Sesión cerrada")}
+function go(page){document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.page===page));document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active",p.id===page));const b=document.querySelector('.nav button[data-page="'+page+'"]');$("title").textContent=b?b.textContent.trim():"Dashboard";if(page==="users")loadLogs();if(page==="api")loadApiStatus();if(page==="keys")renderKeys()}
+document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>go(b.dataset.page));
+async function refreshAll(){if(loading)return;loading=true;try{const [s,k,w,l,a]=await Promise.all([api("/api/admin/stats"),api("/api/admin/keys"),api("/api/whitelist"),api("/api/admin/logs?limit=20"),api("/api/admin/api-status")]);$("totalKeys").textContent=s.totalKeys;$("activeKeys").textContent=s.activeKeys;$("revokedKeys").textContent=s.revokedKeys;$("whiteUsers").textContent=s.whitelistUsers;keys=k.keys;whitelist=w;logs=l.logs;setApiVisual(a.enabled);renderKeys();renderWL();renderLogs();renderRecent()}catch(e){if(e.message!=="UNAUTHORIZED")toast(e.message,false)}finally{loading=false}}
+async function loadLogs(){try{logs=(await api("/api/admin/logs?limit=100")).logs;renderLogs()}catch(e){}}
+async function loadApiStatus(){try{setApiVisual((await api("/api/admin/api-status")).enabled)}catch(e){}}
+async function toggleApi(enabled){try{const d=await api("/api/admin/api-status",{method:"POST",body:JSON.stringify({enabled})});setApiVisual(d.enabled);toast(d.enabled?"API activada":"API desactivada",true)}catch(e){$("apiToggle").checked=!enabled;toast(e.message,false)}}
+async function generateKeys(){const amount=Math.max(1,Math.min(100,Number($("amount").value)||1));try{const d=await api("/api/admin/keys/generate",{method:"POST",body:JSON.stringify({amount,type:$("duration").value})});$("generated").innerHTML=d.keys.map(k=>`<div class="keyout"><span>${esc(k.key)} <span class="muted">• ${esc(k.type)} • ${k.expiresAt?date(k.expiresAt):"Permanente"}</span></span><button class="copy" onclick="copyText('${esc(k.key)}')">Copiar</button></div>`).join("");await refreshAll();toast(amount+" key(s) generada(s)")}catch(e){toast(e.message,false)}}
+async function copyText(v){try{await navigator.clipboard.writeText(v);toast("Key copiada")}catch{toast("No se pudo copiar",false)}}
+function renderKeys(){const q=($("keySearch")?.value||"").toLowerCase();const rows=keys.filter(k=>(k.type+" "+(k.usedUsername||"")+" "+(k.usedBy||"")).toLowerCase().includes(q));$("keysBody").innerHTML=rows.map(k=>{let status=k.revoked?'<span class="badge revoked">● Revocada</span>':k.expired?'<span class="badge expired">● Expirada</span>':'<span class="badge ok">● Activa</span>';let actions=`<button class="ghost" style="padding:7px 9px" onclick="extendKey('${k.id}')">＋ Días</button> `;if(k.revoked)actions+=`<button class="success" onclick="activateKey('${k.id}')">Activar</button>`;else actions+=`<button class="danger" onclick="revoke('${k.id}')">Revocar</button>`;return `<tr><td><b>${esc(k.type)}</b></td><td>${k.usedUsername?`<span class="user-name">${esc(k.usedUsername)}</span><br><span class="user-id">${esc(k.usedBy||"")}</span>`:"<span class='muted'>Sin usar</span>"}</td><td>${date(k.createdAt)}</td><td>${date(k.expiresAt)}</td><td>${status}</td><td>${actions}</td></tr>`}).join("")||'<tr><td colspan="6" class="empty">No hay keys que coincidan.</td></tr>'}
+async function extendKey(id){const raw=prompt("¿Cuántos días quieres agregar?", "7");if(raw===null)return;const days=Number(raw);if(!Number.isFinite(days)||days<1||days>3650)return toast("Escribe entre 1 y 3650 días",false);try{await api("/api/admin/keys/"+id+"/extend",{method:"POST",body:JSON.stringify({days})});await refreshAll();toast("Key extendida "+days+" día(s)")}catch(e){toast(e.message,false)}}
+async function revoke(id){if(!confirm("¿Revocar esta key?"))return;try{await api("/api/admin/keys/"+id+"/revoke",{method:"POST"});await refreshAll();toast("Key revocada")}catch(e){toast(e.message,false)}}
+async function activateKey(id){try{await api("/api/admin/keys/"+id+"/activate",{method:"POST"});await refreshAll();toast("Key activada")}catch(e){toast(e.message,false)}}
+async function addWhitelist(){const id=$("wlId").value.trim(),name=$("wlName").value.trim();if(!id)return toast("Escribe el User ID",false);try{await api("/api/whitelist",{method:"POST",body:JSON.stringify({robloxUserId:id,robloxUsername:name||id})});$("wlId").value="";$("wlName").value="";await refreshAll();toast("Usuario agregado")}catch(e){toast(e.message,false)}}
+async function removeWL(id){if(!confirm("¿Quitar este usuario?"))return;try{await api("/api/admin/whitelist/"+encodeURIComponent(id),{method:"DELETE"});await refreshAll();toast("Usuario eliminado")}catch(e){toast(e.message,false)}}
+function renderWL(){$("wlBody").innerHTML=whitelist.map(x=>`<tr><td><span class="user-id">${esc(x.robloxUserId)}</span></td><td><span class="user-name">${esc(x.robloxUsername)}</span></td><td>${date(x.createdAt)}</td><td><button class="danger" onclick="removeWL('${esc(x.robloxUserId)}')">Quitar</button></td></tr>`).join("")||'<tr><td colspan="4" class="empty">No hay usuarios registrados.</td></tr>'}
+function actionName(a){return ({validate:"Validación",trial:"Trial",extend:"Extensión",activate:"Activación",api_on:"API activada",api_off:"API desactivada",revoke:"Revocación"})[a]||a}
+function renderLogs(){$("logsBody").innerHTML=logs.map(x=>`<tr><td><b>${esc(actionName(x.action))}</b></td><td>${x.robloxUsername?esc(x.robloxUsername):x.robloxUserId?esc(x.robloxUserId):"<span class='muted'>Sistema</span>"}</td><td><span class="key-id">${esc(x.keyId||"—")}</span></td><td class="${x.success?"log-success":"log-fail"}">${x.success?"✓ OK":"✕ Falló"}</td><td>${esc(x.message||"—")}</td><td>${date(x.createdAt)}</td></tr>`).join("")||'<tr><td colspan="6" class="empty">No hay actividad registrada.</td></tr>'}
+function renderRecent(){$("recentBody").innerHTML=logs.slice(0,6).map(x=>`<tr><td><b>${esc(actionName(x.action))}</b></td><td>${esc(x.robloxUsername||x.robloxUserId||"Sistema")}</td><td class="${x.success?"log-success":"log-fail"}">${x.success?"✓ OK":"✕ Falló"}</td><td>${date(x.createdAt)}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">Sin actividad reciente.</td></tr>'}
+$("password").addEventListener("keydown",e=>{if(e.key==="Enter")login()});
+setInterval(()=>{if(token&&!document.hidden)refreshAll()},15000);
+if(token){showApp();refreshAll()}else{$("password").focus()}
+</script>
+</body>
+</html>
